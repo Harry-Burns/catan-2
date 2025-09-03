@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Catan Board</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Basic body styling using Inter font (Tailwind default) */
+        body { font-family: 'Inter', sans-serif; }
+
+        /* Container for the entire Catan board application */
+        .catan-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 1rem; /* 16px */
+            min-height: 100vh;
+            background-color: #52565a; /* A light, neutral background for the page */
+            position: relative; /* Crucial for positioning child elements absolutely */
+        }
+
+        /* Styling for the SVG container, giving it a 'water' backdrop and shadow */
+        #catan-board-svg-container {
+            width: 90vw; /* Responsive width, takes 90% of the viewport width */
+            max-width: 800px; /* Maximum width for larger screens to keep it manageable */
+            background-color: #577488; /* Light blue, simulating water around the island */
+            padding: 10px; /* Padding around the SVG element */
+            border-radius: 12px; /* Rounded corners for the container */
+            box-shadow: 0 10px 20px rgba(0,0,0,0.1); /* Subtle shadow for depth */
+            margin-top: 60px; /* Add margin to prevent overlap with dice display */
+        }
+
+        /* Styling for the SVG element itself */
+        #catan-board-svg {
+            display: block; /* Removes extra space below the SVG if it were inline */
+            width: 100%; /* SVG takes full width of its container */
+            height: auto; /* Height adjusts to maintain aspect ratio defined by viewBox */
+        }
+
+        /* Styling for the controls area (e.g., buttons) */
+        .controls button {
+            transition: background-color 0.3s, transform 0.1s;
+        }
+        .controls button:active {
+            transform: translateY(1px); /* Slight press down effect on click */
+        }
+
+        /* Player Info Box Styling */
+        .player-info {
+            position: absolute;
+            width: 220px; /* Adjusted width */
+            padding: 12px;
+            border: 2px solid #718096; /* Tailwind gray-600 */
+            border-radius: 8px;
+            background-color: rgba(255, 255, 255, 0.92); /* Slightly more opaque */
+            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+            font-size: 0.875rem; /* text-sm */
+            z-index: 10; /* Ensure they are above the board SVG if overlapping occurs */
+        }
+        .player-info h3 {
+            font-size: 1rem; /* text-base */
+            font-weight: 600; /* semibold */
+            margin-bottom: 8px;
+            border-bottom: 1px solid #E2E8F0; /* Tailwind gray-300 */
+            padding-bottom: 6px;
+        }
+        .player-info .section-title {
+            font-weight: 600; /* semibold */
+            margin-top: 8px;
+            margin-bottom: 4px;
+            font-size: 0.8rem;
+        }
+        .player-info .resources div, .player-info .dev-cards p {
+            margin-bottom: 3px;
+            padding-left: 8px;
+        }
+        .player-info.current-player {
+            border-width: 3px;
+            box-shadow: 0 0 12px 2px gold, 0 4px 8px rgba(0,0,0,0.2); /* Enhanced glow */
+        }
+        .resource-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 2px;
+        }
+        .resource-icon {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            margin-right: 6px;
+            border-radius: 3px;
+            border: 1px solid rgba(0,0,0,0.2);
+        }
+
+        /* Positioning for Player Info Boxes */
+        .top-left { top: 70px; left: 20px; } /* Adjusted top to avoid title/button */
+        .top-right { top: 70px; right: 20px; }
+        .bottom-left { bottom: 20px; left: 20px; }
+        .bottom-right { bottom: 20px; right: 20px; }
+
+        /* Dice Roll Display Styling */
+        #dice-roll-display {
+            position: absolute;
+            top: 70px; /* Position below the main title/refresh button */
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 8px 16px;
+            background-color: #ffffff;
+            border: 2px solid #4A5568; /* Tailwind gray-700 */
+            border-radius: 8px;
+            font-size: 1.25rem; /* text-xl */
+            font-weight: bold;
+            color: #2D3748; /* Tailwind gray-800 */
+            box-shadow: 0 3px 6px rgba(0,0,0,0.1);
+            z-index: 100;
+            min-width: 180px;
+            text-align: center;
+        }
+
+    </style>
+</head>
+<body class="bg-gray-100">
+    <div class="catan-container">
+        <h1 class="text-4xl font-bold text-gray-800 my-6 tracking-tight">Settlers of Catan</h1>
+        
+        <div id="dice-roll-display" style="display:none;">Waiting for roll...</div>
+
+        <div class="controls mt-4 mb-6"> <button id="refresh-button" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-lg shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50">
+                Refresh State
+            </button>
+        </div>
+        <div id="catan-board-svg-container">
+            <svg id="catan-board-svg" xmlns="http://www.w3.org/2000/svg"></svg>
+        </div>
+
+        <div id="player-info-0" class="player-info top-left" style="display:none;"></div>
+        <div id="player-info-1" class="player-info top-right" style="display:none;"></div>
+        <div id="player-info-2" class="player-info bottom-left" style="display:none;"></div>
+        <div id="player-info-3" class="player-info bottom-right" style="display:none;"></div>
+    </div>
+
+    <script>
+        // --- Constants for Board Rendering ---
+        const HEX_SIZE = 50; //
+        const HEX_RADIUS = HEX_SIZE / Math.cos(Math.PI / 6); //
+        const HEX_WIDTH = 2 * HEX_SIZE; //
+        const HEX_HEIGHT = HEX_RADIUS * 2; //
+
+        const SETTLEMENT_RADIUS = HEX_SIZE * 0.18; //
+        const CITY_RADIUS = HEX_SIZE * 0.16; //
+        const ROAD_WIDTH = HEX_SIZE * 0.12; //
+        const ROBBER_RADIUS = HEX_SIZE * 0.28; //
+        const NUMBER_FONT_SIZE = HEX_SIZE * 0.35; //
+        const NUMBER_CIRCLE_RADIUS = HEX_SIZE * 0.28; //
+        const PORT_RADIUS = HEX_SIZE * 0.28; //
+        const PORT_FONT_SIZE  = HEX_SIZE * 0.25; //
+
+        const HEX_COLORS = { //
+            'wood': '#006400', 'brick': '#B22222', 'sheep': '#90EE90',
+            'wheat': '#FFD700', 'ore': '#708090', 'desert': '#F0E68C',
+            'water': '#a7d7f9'
+        };
+        const PLAYER_COLORS = { //
+            'red': '#E53E3E', 'blue': '#3B82F6', 
+            'orange': '#F59E0B', 'white': '#E5E7EB', // Consider a dark stroke for white if on light bg
+            'default': '#A0AEC0' // Fallback color
+        };
+        const RESOURCE_NAMES_ORDERED = ['wood', 'brick', 'sheep', 'wheat', 'ore']; // for canonical resource list
+
+        const svgNS = "http://www.w3.org/2000/svg"; //
+        const boardSvg = document.getElementById('catan-board-svg'); //
+
+        const hexGridCenters = (() => { //
+            const centers = []; 
+            let id = 0;
+            const gridRows = [
+                { count: 3, xOffsetRatio: 1.0 }, { count: 4, xOffsetRatio: 0.5 },
+                { count: 5, xOffsetRatio: 0.0 }, { count: 4, xOffsetRatio: 0.5 },
+                { count: 3, xOffsetRatio: 1.0 }
+            ];
+            let currentY = HEX_HEIGHT * 3/2; 
+            gridRows.forEach(rowInfo => {
+                let currentX = rowInfo.xOffsetRatio * HEX_WIDTH; 
+                for (let i = 0; i < rowInfo.count; i++) {
+                    centers.push({ id: id++, x: currentX, y: currentY });
+                    currentX += HEX_WIDTH; 
+                }
+                currentY += HEX_RADIUS * 1.5; 
+            });
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            centers.forEach(c => {
+                minX = Math.min(minX, c.x - HEX_WIDTH / 2); maxX = Math.max(maxX, c.x + HEX_WIDTH / 2);
+                minY = Math.min(minY, c.y - HEX_HEIGHT / 2); maxY = Math.max(maxY, c.y + HEX_HEIGHT / 2);
+            });
+            const padding = HEX_SIZE * 0.5; 
+            const viewWidth = (maxX - minX) + 2 * padding;
+            const viewHeight = (maxY - minY) + 2 * padding;
+            const adjustedCenters = centers.map(c => ({
+                id: c.id, x: c.x - minX + padding, y: c.y - minY + padding
+            }));
+            boardSvg.setAttribute('viewBox', `0 0 ${viewWidth.toFixed(2)} ${viewHeight.toFixed(2)}`);
+            return adjustedCenters;
+        })();
+
+        function getHexPoints(centerX, centerY, radius) { //
+            const points = [];
+            for (let i = 0; i < 6; i++) {
+                const angle_rad = Math.PI / 3 * i + Math.PI / 6; 
+                points.push(
+                    `${(centerX + radius * Math.cos(angle_rad)).toFixed(2)},${(centerY + radius * Math.sin(angle_rad)).toFixed(2)}`
+                );
+            }
+            return points.join(' ');
+        }
+
+        function getHexVertexCoords(hexCenterData, vertexIndex, radius) { //
+            const angle_rad = Math.PI / 3 * vertexIndex + Math.PI / 6; 
+            return {
+                x: hexCenterData.x + radius * Math.cos(angle_rad),
+                y: hexCenterData.y + radius * Math.sin(angle_rad)
+            };
+        }
+
+        function getHexEdgeCoords(hexCenterData, edgeIndex, radius) { //
+            const v1 = getHexVertexCoords(hexCenterData, edgeIndex, radius);
+            const v2 = getHexVertexCoords(hexCenterData, (edgeIndex + 1) % 6, radius); 
+            return { x1: v1.x, y1: v1.y, x2: v2.x, y2: v2.y };
+        }
+
+        // --- Drawing Functions (drawHex, drawSettlement, drawRoad, drawPort are from your existing script) ---
+        // (Assuming they are defined here as in your provided catan_board.html file)
+        function drawHex(hexDataFull) { // (adapted slightly for clarity)
+            const hexSpec = hexGridCenters.find(hc => hc.id === hexDataFull.id);
+            if (!hexSpec) return;
+            const { x: centerX, y: centerY } = hexSpec;
+            const group = document.createElementNS(svgNS, 'g');
+            const polygon = document.createElementNS(svgNS, 'polygon');
+            polygon.setAttribute('points', getHexPoints(centerX, centerY, HEX_RADIUS));
+            polygon.setAttribute('fill', HEX_COLORS[hexDataFull.resource] || 'gray');
+            polygon.setAttribute('stroke', '#4A5568'); 
+            polygon.setAttribute('stroke-width', '1.5');
+            group.appendChild(polygon);
+
+            if (hexDataFull.number) {
+                const numberBg = document.createElementNS(svgNS, 'circle');
+                numberBg.setAttribute('cx', centerX.toFixed(2));
+                numberBg.setAttribute('cy', centerY.toFixed(2));
+                numberBg.setAttribute('r', NUMBER_CIRCLE_RADIUS.toFixed(2));
+                numberBg.setAttribute('fill', 'rgba(255, 255, 255, 0.7)');
+                group.appendChild(numberBg);
+                const text = document.createElementNS(svgNS, 'text');
+                text.setAttribute('x', centerX.toFixed(2));
+                text.setAttribute('y', (centerY + NUMBER_FONT_SIZE * 0.35).toFixed(2));
+                text.setAttribute('text-anchor', 'middle');
+                text.setAttribute('font-family', 'Arial, Helvetica, sans-serif');
+                text.setAttribute('font-size', `${NUMBER_FONT_SIZE.toFixed(2)}px`);
+                text.setAttribute('font-weight', 'bold');
+                const isHighProb = hexDataFull.number === 6 || hexDataFull.number === 8;
+                text.setAttribute('fill', isHighProb ? '#C53030' : '#1A202C');
+                text.textContent = hexDataFull.number;
+                group.appendChild(text);
+            }
+            if (hexDataFull.hasRobber) {
+                const robberCircle = document.createElementNS(svgNS, 'circle');
+                robberCircle.setAttribute('cx', centerX.toFixed(2));
+                robberCircle.setAttribute('cy', centerY.toFixed(2));
+                robberCircle.setAttribute('r', ROBBER_RADIUS.toFixed(2));
+                robberCircle.setAttribute('fill', 'rgba(20,20,20,0.88)');
+                group.appendChild(robberCircle);
+            }
+            boardSvg.appendChild(group);
+        }
+
+        function drawSettlement(settlementData) { // (adapted slightly for clarity)
+            const hexLoc = settlementData.location;
+            const hexCenterData = hexGridCenters.find(hc => hc.id === hexLoc.hexId);
+            if (!hexCenterData) return;
+            const vertexCoords = getHexVertexCoords(hexCenterData, hexLoc.vertex, HEX_RADIUS);
+            const playerColor = PLAYER_COLORS[settlementData.player] || PLAYER_COLORS['default'];
+            if (settlementData.type === 'city') {
+                const citySize = CITY_RADIUS * 2;
+                const city = document.createElementNS(svgNS, 'rect');
+                city.setAttribute('x', (vertexCoords.x - CITY_RADIUS).toFixed(2));
+                city.setAttribute('y', (vertexCoords.y - CITY_RADIUS).toFixed(2));
+                city.setAttribute('width', citySize.toFixed(2));
+                city.setAttribute('height', citySize.toFixed(2));
+                city.setAttribute('fill', playerColor);
+                city.setAttribute('stroke', '#1A202C'); 
+                city.setAttribute('stroke-width', '2');
+                boardSvg.appendChild(city);
+            } else {
+                const sRadius = SETTLEMENT_RADIUS;
+                const house = document.createElementNS(svgNS, 'polygon');
+                const points = [
+                    `${(vertexCoords.x - sRadius).toFixed(2)},${(vertexCoords.y + sRadius).toFixed(2)}`, 
+                    `${(vertexCoords.x + sRadius).toFixed(2)},${(vertexCoords.y + sRadius).toFixed(2)}`,
+                    `${(vertexCoords.x + sRadius).toFixed(2)},${(vertexCoords.y - sRadius * 0.4).toFixed(2)}`,
+                    `${(vertexCoords.x).toFixed(2)},${(vertexCoords.y - sRadius * 1.6).toFixed(2)}`,      
+                    `${(vertexCoords.x - sRadius).toFixed(2)},${(vertexCoords.y - sRadius * 0.4).toFixed(2)}`
+                ].join(' ');
+                house.setAttribute('points', points);
+                house.setAttribute('fill', playerColor);
+                house.setAttribute('stroke', '#1A202C');
+                house.setAttribute('stroke-width', '1.5');
+                boardSvg.appendChild(house);
+            }
+        }
+
+        function drawRoad(roadData) { // (adapted slightly for clarity)
+            const hexLoc = roadData.location;
+            const hexCenterData = hexGridCenters.find(hc => hc.id === hexLoc.hexId);
+            if (!hexCenterData) return;
+            const edgeCoords = getHexEdgeCoords(hexCenterData, hexLoc.edge, HEX_RADIUS);
+            const playerColor = PLAYER_COLORS[roadData.player] || PLAYER_COLORS['default'];
+            const roadLine = document.createElementNS(svgNS, 'line');
+            roadLine.setAttribute('x1', edgeCoords.x1.toFixed(2));
+            roadLine.setAttribute('y1', edgeCoords.y1.toFixed(2));
+            roadLine.setAttribute('x2', edgeCoords.x2.toFixed(2));
+            roadLine.setAttribute('y2', edgeCoords.y2.toFixed(2));
+            roadLine.setAttribute('stroke', playerColor);
+            roadLine.setAttribute('stroke-width', ROAD_WIDTH.toFixed(2));
+            roadLine.setAttribute('stroke-linecap', 'round');
+            boardSvg.appendChild(roadLine);
+        }
+        
+        function drawPort(portData) { // (adapted slightly for clarity)
+            const hexC = hexGridCenters.find(h => h.id === portData.location.hexId);
+            if(!hexC) return;
+            const edge = getHexEdgeCoords(hexC, portData.location.edge, HEX_RADIUS);
+            const x = (edge.x1 + edge.x2) / 2;
+            const y = (edge.y1 + edge.y2) / 2;
+            const grp = document.createElementNS(svgNS,'g');
+            const c = document.createElementNS(svgNS,'circle');
+            c.setAttribute('cx', x.toFixed(2)); c.setAttribute('cy', y.toFixed(2));
+            c.setAttribute('r',  PORT_RADIUS.toFixed(2));
+            c.setAttribute('fill','rgba(255, 255, 255, 0.8)'); 
+            c.setAttribute('stroke','#1A202C'); c.setAttribute('stroke-width','1.5');
+            grp.appendChild(c);
+            const txt = document.createElementNS(svgNS,'text');
+            txt.setAttribute('x', x.toFixed(2)); txt.setAttribute('y', (y + PORT_FONT_SIZE*0.35).toFixed(2));
+            txt.setAttribute('text-anchor','middle'); txt.setAttribute('font-size',`${PORT_FONT_SIZE.toFixed(2)}px`);
+            txt.setAttribute('font-weight','bold'); txt.setAttribute('fill', '#2D3748');
+            txt.textContent = portData.ratio === 3 ? '3:1' : `2:${portData.type.slice(0,1).toUpperCase()}`;
+            grp.appendChild(txt);
+            boardSvg.appendChild(grp);
+        }
+
+        // --- New Rendering Functions for Player Info and Dice ---
+        function renderPlayerInfo(playerData, containerElement) {
+            containerElement.innerHTML = ''; // Clear previous content
+            const playerColor = PLAYER_COLORS[playerData.player_id] || PLAYER_COLORS['default'];
+            containerElement.style.borderColor = playerColor;
+            
+            playerData.is_current_player 
+                ? containerElement.classList.add('current-player') 
+                : containerElement.classList.remove('current-player');
+
+            const title = document.createElement('h3');
+            title.textContent = `Player: ${playerData.player_id.charAt(0).toUpperCase() + playerData.player_id.slice(1)}`;
+            title.style.color = playerColor;
+            containerElement.appendChild(title);
+
+            const resSectionTitle = document.createElement('p');
+            resSectionTitle.className = 'section-title';
+            resSectionTitle.textContent = 'Resources:';
+            containerElement.appendChild(resSectionTitle);
+
+            const resourcesDiv = document.createElement('div');
+            resourcesDiv.className = 'resources';
+            RESOURCE_NAMES_ORDERED.forEach(resourceKey => {
+                const count = playerData.resources[resourceKey] || 0;
+                const resourceItem = document.createElement('div');
+                resourceItem.className = 'resource-item';
+                resourceItem.innerHTML = `
+                    <span class="resource-icon" style="background-color:${HEX_COLORS[resourceKey]};"></span>
+                    ${resourceKey.charAt(0).toUpperCase() + resourceKey.slice(1)}: ${count}
+                `;
+                resourcesDiv.appendChild(resourceItem);
+            });
+            containerElement.appendChild(resourcesDiv);
+
+            const devSectionTitle = document.createElement('p');
+            devSectionTitle.className = 'section-title';
+            devSectionTitle.textContent = 'Development Cards:';
+            containerElement.appendChild(devSectionTitle);
+            
+            const devCardsP = document.createElement('p');
+            devCardsP.textContent = `${playerData.dev_card_count}`;
+            const devCardsContainer = document.createElement('div');
+            devCardsContainer.className = 'dev-cards';
+            devCardsContainer.appendChild(devCardsP);
+            containerElement.appendChild(devCardsContainer);
+            
+            containerElement.style.display = 'block';
+        }
+
+        function renderDiceRoll(rollData) {
+            const display = document.getElementById('dice-roll-display');
+            if (!display) return;
+
+            if (rollData && rollData.length === 2) {
+                const sum = rollData[0] + rollData[1];
+                display.textContent = `Roll: ${rollData[0]} + ${rollData[1]} = ${sum}`;
+                display.style.display = 'block';
+            } else {
+                display.textContent = 'Waiting for roll...';
+                display.style.display = 'block'; // Keep visible or hide if preferred: 'none';
+            }
+        }
+
+        // --- Main Rendering Function --- (Updated from renderBoard)
+        function renderGameDisplay(fullGameState) {
+            while (boardSvg.firstChild) { //
+                boardSvg.removeChild(boardSvg.firstChild);
+            }
+
+            // Check for valid game state and board_state structure
+            if (!fullGameState || !fullGameState.hexes) { // Expecting ExtendedBoardState directly now
+                console.error("Invalid game state provided to renderGameDisplay.", fullGameState);
+                const errorText = document.createElementNS(svgNS, 'text');
+                errorText.setAttribute('x', '50%'); errorText.setAttribute('y', '50%');
+                errorText.setAttribute('text-anchor', 'middle'); errorText.setAttribute('fill', 'red');
+                errorText.setAttribute('font-size', `${HEX_SIZE * 0.4}px`);
+                errorText.textContent = "Error: Board data unavailable.";
+                boardSvg.appendChild(errorText);
+                // Hide player info and dice if main board fails
+                document.querySelectorAll('.player-info').forEach(el => el.style.display = 'none');
+                const diceEl = document.getElementById('dice-roll-display');
+                if (diceEl) diceEl.style.display = 'none';
+                return;
+            }
+
+            // Draw board elements (hexes, roads, settlements, ports)
+            fullGameState.hexes.forEach(hexData => drawHex(hexData));
+            if (fullGameState.roads) {
+                fullGameState.roads.forEach(roadData => drawRoad(roadData));
+            }
+            if (fullGameState.settlements) {
+                fullGameState.settlements.forEach(settlementData => drawSettlement(settlementData));
+            }
+            if (fullGameState.ports) {
+                fullGameState.ports.forEach(portData => drawPort(portData));
+            }
+
+            // Render Player Information
+            const playerInfoElements = [ // Match IDs from HTML
+                document.getElementById('player-info-0'), document.getElementById('player-info-1'),
+                document.getElementById('player-info-2'), document.getElementById('player-info-3')
+            ];
+            playerInfoElements.forEach(el => { if (el) el.style.display = 'none'; }); // Hide all first
+
+            if (fullGameState.players_data) {
+                fullGameState.players_data.forEach((player, index) => {
+                    if (index < playerInfoElements.length && playerInfoElements[index]) {
+                        renderPlayerInfo(player, playerInfoElements[index]);
+                    }
+                });
+            }
+            
+            // Render Dice Roll
+            renderDiceRoll(fullGameState.last_dice_roll);
+        }
+
+        // --- Live Update via Fetch API --- (Fetch /state and render)
+        async function fetchAndUpdateState() { // Renamed for clarity
+            const button = document.getElementById('refresh-button');
+            button.disabled = true; 
+            button.textContent = 'Refreshing...';
+            try {
+                const response = await fetch('/state'); // Fetches the ExtendedBoardState
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const newGameState = await response.json();
+                renderGameDisplay(newGameState); // Call the updated render function
+            } catch (error) {
+                console.error('Error fetching or parsing game state:', error);
+                renderGameDisplay(null); // Trigger error display on board
+            } finally {
+                button.disabled = false; 
+                button.textContent = 'Refresh State';
+            }
+        }
+
+        // --- Initial Render & Event Listener Setup ---
+        document.addEventListener('DOMContentLoaded', () => { //
+            fetchAndUpdateState(); // Initial fetch
+
+            const refreshButton = document.getElementById('refresh-button');
+            if (refreshButton) { //
+                refreshButton.addEventListener('click', fetchAndUpdateState);
+            }
+
+            setInterval(fetchAndUpdateState, 500); // Poll every 2 seconds (adjusted interval)
+        });
+    </script>
+</body>
+</html>
