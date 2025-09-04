@@ -4,13 +4,14 @@ from itertools import product
 from catan.state import GameState
 
 from catan.actions import (
-    DISCARD, MOVE_ROBBER, PLAY_PRETURN, SETUP_TURN,
+    DISCARD, MOVE_ROBBER, PLAY_PRETURN, SETUP_TURN, BUILD_SETTLEMENT, BUILD_ROAD, PLAY_ROAD_BUILDER,
 
     act_setup, 
     act_play_knight, act_play_monopoly, act_play_road_builder, act_play_yop,
     act_build_road, act_build_settlement, act_build_city, act_purchase_dev,
     act_select_robber_response, 
-    act_table_trade_accept, act_table_trade_reject, act_table_trade_select, act_table_trade_propose
+    act_table_trade_accept, act_table_trade_reject, act_table_trade_select, act_table_trade_propose,
+    unpack_action
 )
 
 from catan.ids import (
@@ -36,6 +37,9 @@ def get_random_card(gs: GameState, rng: np.random.Generator, pid: int):
 def get_victory_points(gs: GameState, pid: int) -> int:
     vps = gs.players[pid].settlements_built + gs.players[pid].cities_built * 2
     vps += gs.players[pid].dev_cards[VICTORY_POINT] + gs.players[pid].new_dev_cards[VICTORY_POINT]
+
+    if gs.longest_road_owner == pid: vps += 2
+    if gs.largest_army_owner == pid: vps += 2
     
     return vps
 
@@ -186,6 +190,7 @@ def _pay_bank(gs: GameState, pid: int, resources: np.ndarray):
 def play_knight(gs: GameState):
     pid = int(gs.current_player_idx)
     gs.players[pid].dev_cards[KNIGHT] -= 1
+    gs.players[pid].used_knights += 1
     gs.dev_card_used = True
     gs.prompt = np.uint8(MOVE_ROBBER)
 
@@ -508,9 +513,102 @@ def trade_decision(gs: GameState) -> list[int]:
 
 
 ## Helpers
-def win_check(gs: GameState) -> int:
-    for pid in range(N_PLAYERS):
-        vps = get_victory_points(gs, pid)
-        if vps >= VICTORY_POINTS_REQUIRED:
-            return pid
-    return -1
+def get_largest_army(gs: GameState, pid: np.uint8) -> np.uint8:
+    army_size = gs.players[pid].used_knights
+
+    if army_size < 3: return gs.largest_army_owner
+    if gs.largest_army_owner in (NONE_PLAYER, pid): return np.uint8(pid)
+    
+    larg_pid = gs.largest_army_owner
+
+    return np.uint8(pid) if army_size > gs.players[larg_pid].used_knights else np.uint8(larg_pid)
+
+def _calculate_longest_road(gs: GameState, pid: np.uint8) -> int:
+    road_owner = gs.board.road_owner
+    sett_owner = gs.board.settlement_owner
+    road_adj_sett = gs.topology.road_adj_settlement
+    
+    my_roads = np.where(road_owner == pid)[0]
+    enemy_sett = set(int(s) for s in np.where((sett_owner != -1) & (sett_owner != pid))[0])
+
+    # build settlement -> my roads incidence for fast neighbor lookup
+    sett_to_my_roads = {}
+    for r in my_roads:
+        sA, sB = int(road_adj_sett[r,0]), int(road_adj_sett[r,1])
+        if sA >= 0 and sA not in enemy_sett:
+            sett_to_my_roads.setdefault(sA, []).append(r)
+        if sB >= 0 and sB not in enemy_sett:
+            sett_to_my_roads.setdefault(sB, []).append(r)
+
+    # DFS over edges (roads) without reusing edges
+    visited = set()
+
+    def dfs(cur_road: int, came_from_sett: int) -> int:
+        visited.add(cur_road)
+        best = 1  # count this road
+        sA, sB = int(road_adj_sett[cur_road,0]), int(road_adj_sett[cur_road,1])
+
+        # Explore from each endpoint that is not blocked
+        for s in (sA, sB):
+            if s < 0 or s in enemy_sett:
+                continue
+            # Next roads are my roads incident on this settlement
+            for nxt in sett_to_my_roads.get(s, []):
+                if nxt in visited or nxt == cur_road:
+                    continue
+                # Move along to next edge
+                length = 1 + dfs(nxt, s)
+                if length > best:
+                    best = length
+
+        visited.remove(cur_road)
+        return best
+
+    longest = 0
+    # Try each owned road as a starting edge
+    for r in my_roads:
+        val = dfs(r, -1)
+        if val > longest:
+            longest = val
+
+    return int(longest)
+
+def get_longest_road(gs: GameState, pid: np.uint8, a: int) -> np.uint8:
+    action,arg1,_ = unpack_action(a)
+    road_owner = gs.board.road_owner
+
+    if action == BUILD_SETTLEMENT:
+        sid = int(arg1)
+        neigh_rids = gs.topology.settlement_adj_roads[sid]
+        neigh_pids = [int(road_owner[r]) for r in neigh_rids if r >= 0 and int(road_owner[r]) not in (-1, pid)]
+        
+        if len(neigh_pids) < 3: return gs.longest_road_owner
+
+        if neigh_pids[0] == neigh_pids[1] or neigh_pids[1] == neigh_pids[2] or neigh_pids[2] == neigh_pids[0]:
+            blocked_neigh = neigh_pids[0] if neigh_pids[0] == neigh_pids[1] or neigh_pids[0] == neigh_pids[2] else neigh_pids[1]
+            new_length = _calculate_longest_road(gs, blocked_neigh)
+            gs.players[blocked_neigh].longest_road_len = new_length
+    
+    elif action in (BUILD_ROAD, PLAY_ROAD_BUILDER):
+        length = _calculate_longest_road(gs, pid)
+        gs.players[pid].longest_road_len = length
+
+    # Check all roads against each-other
+    longest_pid = gs.longest_road_owner
+    longest_road = gs.players[longest_pid].longest_road_len if longest_pid != NONE_PLAYER else 0
+
+    _longest_pid = longest_pid
+    for _pid in range(N_PLAYERS):
+        if _pid == longest_pid: continue
+        _length = gs.players[_pid].longest_road_len
+        if _length >= 5 and _length > longest_road:
+            _longest_pid = _pid
+
+    return np.uint8(_longest_pid)
+
+def win_check(gs: GameState, pid: np.uint8) -> np.uint8:
+    vps = get_victory_points(gs, pid)
+
+    if vps >= VICTORY_POINTS_REQUIRED:
+        return pid
+    return NONE_PLAYER
