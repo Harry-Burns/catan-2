@@ -30,10 +30,13 @@ class GameRunner:
         self.engine = engine
         self.player_controllers = player_controllers
 
+        self.steps = 0; self.max_steps = 100000
+
     def play_game(self, pause=False, delay=0, display=False, verbose=True):
         try:
-            while self.engine.gs.winner == NONE_PLAYER:
+            while self.engine.gs.winner == NONE_PLAYER and self.steps < self.max_steps:
                 self.play_action(verbose=verbose)
+                self.steps += 1
 
                 if display:
                     display_function(self.engine.gs)
