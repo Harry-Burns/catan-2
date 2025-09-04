@@ -30,10 +30,10 @@ class GameRunner:
         self.engine = engine
         self.player_controllers = player_controllers
 
-    def play_game(self, pause=False, delay=0, display=False):
+    def play_game(self, pause=False, delay=0, display=False, verbose=True):
         try:
             while self.engine.gs.winner == NONE_PLAYER:
-                self.play_action()
+                self.play_action(verbose=verbose)
 
                 if display:
                     display_function(self.engine.gs)
@@ -50,18 +50,18 @@ class GameRunner:
         print("⛔ Game Over! ⛔")
         print(f"⛔ Winner: {self.engine.gs.winner} ⛔")
 
-    def play_action(self):
+    def play_action(self, verbose=False):
         gs = self.engine.gs
         pid = gs.current_player_idx
         player_ctrl = self.player_controllers[pid]
 
-        print(f"\nPlayer: {pid}:\"{PLY2STR[pid].upper()}\" | Action Prompt: \"{PROMPT2STR[gs.prompt]}\"")
+        if verbose: print(f"\nPlayer: {pid}:\"{PLY2STR[pid].upper()}\" | Action Prompt: \"{PROMPT2STR[gs.prompt]}\"")
 
         possible_moves = playable_moves(gs)
         selected_action = player_ctrl.decide(gs, possible_moves)
 
         action_name,_,_ = unpack_action(selected_action)
-        print(f"Selected Action: \"{RESPONSE2STR[action_name]}\"")
-        print(f"Action Number: {len(gs.action_log)}")
+        if verbose: print(f"Selected Action: \"{RESPONSE2STR[action_name]}\"")
+        if verbose: print(f"Action Number: {len(gs.action_log)}")
 
         self.engine.step(selected_action)
