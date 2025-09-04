@@ -9,7 +9,7 @@ from catan.interface import (
     purchase_road, purchase_settlement, purchase_city, purchase_dev_card, 
     play_knight, play_monopoly, play_year_of_plenty, play_road_builder, move_robber, 
     
-    win_check,
+    win_check, get_largest_army, get_longest_road,
     generate_playable_setup_moves, generate_playable_dev_card_moves, generate_playable_purchases,
     generate_robber_moves, 
     generate_playable_trades, trade_decision, trade_selection
@@ -154,8 +154,14 @@ def apply_action_inplace(gs: GameState, a: int, rng: np.random.Generator) -> Non
         raise ValueError(f"WTF? Bad action?: \"{action}\"")
 
     # At the end of every action do the following:
+    if action in LARGEST_ARMY_ACTIONS:
+        gs.largest_army_owner = get_largest_army(gs, player)
+
+    if action in LONGEST_ROAD_ACTIONS:
+        gs.longest_road_owner = get_longest_road(gs, player, a)
+
     if action in VICTORY_POINT_ACTIONS:
-        gs.winner = win_check(gs)
+        gs.winner = win_check(gs, player)
     gs.action_log.append(a)
 
 def apply_action(gs: GameState, a: int, rng: np.random.Generator) -> GameState:

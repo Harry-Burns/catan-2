@@ -1,7 +1,7 @@
 import time
 import traceback
 
-from catan.ids import PLY2STR
+from catan.ids import PLY2STR, NONE_PLAYER
 from catan.actions import PROMPT2STR, RESPONSE2STR, unpack_action
 
 from game.engine import Engine
@@ -32,7 +32,7 @@ class GameRunner:
 
     def play_game(self, pause=False, delay=0, display=False):
         try:
-            while self.engine.gs.winner == -1:
+            while self.engine.gs.winner == NONE_PLAYER:
                 self.play_action()
 
                 if display:

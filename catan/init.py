@@ -1,7 +1,7 @@
 import numpy as np
 from dataclasses import replace
 
-from catan.ids import WOOD,BRICK,SHEEP,WHEAT,ORE, DESERT, N_RES, N_PLAYERS, EMPTY
+from catan.ids import WOOD,BRICK,SHEEP,WHEAT,ORE, DESERT, N_RES, N_PLAYERS, EMPTY, NONE_PLAYER
 from catan.ids import KNIGHT, YEAR_OF_PLENTY, MONOPOLY, ROAD_BUILDER, VICTORY_POINT
 from catan.actions import SETUP_TURN
 
@@ -93,9 +93,11 @@ def initialize_game(rng: np.random.Generator) -> GameState:
         trade_offer_give=None,
         trade_offer_take=None,
         trade_accept_mask=None,
+        largest_army_owner=NONE_PLAYER,
+        longest_road_owner=NONE_PLAYER,
         has_rolled=False,
         dev_card_used=False,
-        winner=-1,
+        winner=NONE_PLAYER,
         turn_index=np.int32(0),
         prompt=np.uint8(SETUP_TURN),
         action_log=[],

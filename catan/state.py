@@ -48,9 +48,12 @@ class GameState:
     trade_offer_take: Optional[np.ndarray]  # (N_RES,) int8
     trade_accept_mask: Optional[np.ndarray] # (N_PLAYERS,) bool
 
+    longest_road_owner: np.uint8
+    largest_army_owner: np.uint8
+
     has_rolled: bool
     dev_card_used: bool
-    winner: int  # -1 if none, else 0..3
+    winner: np.uint8
 
     # Prompt / phase
     turn_index: np.int32
@@ -91,6 +94,8 @@ class GameState:
             trade_offer_give=None if self.trade_offer_give is None else self.trade_offer_give.copy(),
             trade_offer_take=None if self.trade_offer_take is None else self.trade_offer_take.copy(),
             trade_accept_mask=None if self.trade_accept_mask is None else self.trade_accept_mask.copy(),
+            longest_road_owner=self.longest_road_owner,
+            largest_army_owner=self.largest_army_owner,
             has_rolled=self.has_rolled,
             dev_card_used=self.dev_card_used,
             winner=self.winner,
