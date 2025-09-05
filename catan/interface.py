@@ -58,6 +58,9 @@ def _place_settlement(gs: GameState, pid: np.uint8, sid: int):
             gs.players[pid].ports_mask = np.uint8(int(gs.players[pid].ports_mask) | (1 << bit))
             break
 
+def _place_road(gs: GameState, pid: np.uint8, rid: int):
+    gs.players[pid].roads_built += 1
+    gs.board.road_owner[rid] = np.int8(pid)
 
 ### ------------------------ -------------------
 ### --- Game State Altering   (apply_action) ---
@@ -166,12 +169,11 @@ def pass_turn(gs: GameState):
 
 
 def purchase_road(gs: GameState, rid: int):
-    pid = gs.current_player_idx
+    pid = int(gs.current_player_idx)
 
     _pay_bank(gs, pid, COSTS[0])
+    _place_road(gs,pid,rid)
 
-    gs.players[pid].roads_built += 1
-    gs.board.road_owner[rid] = np.int8(pid)
 
 def purchase_settlement(gs: GameState, sid: int):
     pid = int(gs.current_player_idx)
@@ -244,11 +246,9 @@ def play_road_builder(gs: GameState, rid1: int, rid2: int):
     
     
     if rid1 >= 0:
-        gs.players[pid].roads_built += 1
-        gs.board.road_owner[rid1] = np.int8(pid)
+        _place_road(gs,pid,rid1)
     if rid2 >= 0 and rid1 != rid2:
-        gs.players[pid].roads_built += 1
-        gs.board.road_owner[rid2] = np.int8(pid)
+        _place_road(gs,pid,rid2)
 
     gs.dev_card_used = True
 
