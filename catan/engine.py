@@ -83,7 +83,6 @@ def apply_action_inplace(gs: GameState, a: int, rng: np.random.Generator) -> Non
     # --- Trades
     elif action == PORT_TRADE:
         give,rate,take = unpack_port_trade(a)
-        print(give,rate,take)
         port_trade(gs,give,rate,take)
         gs.prompt = PLAY_TURN
 
