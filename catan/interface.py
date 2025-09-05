@@ -43,6 +43,17 @@ def get_victory_points(gs: GameState, pid: int) -> int:
     
     return vps
 
+def _place_settlement(gs: GameState, pid: np.uint8, sid: int):
+    gs.players[pid].settlements_built += 1
+    gs.board.settlement_owner[sid] = np.int8(pid)
+    gs.board.settlement_type[sid] = np.int8(SETTLEMENT)
+
+    # Add ports
+    port_sett = gs.topology.port_settlement_ix
+    for _portid, _sids in enumerate(port_sett):
+        if sid in _sids:
+            gs.players[pid].ports_mask[_portid] = True
+            break
 
 
 ### ------------------------ -------------------
@@ -156,13 +167,10 @@ def purchase_road(gs: GameState, rid: int):
     gs.board.road_owner[rid] = np.int8(pid)
 
 def purchase_settlement(gs: GameState, sid: int):
-    pid = gs.current_player_idx
+    pid = int(gs.current_player_idx)
 
     _pay_bank(gs, pid, COSTS[1])
-
-    gs.players[pid].settlements_built += 1
-    gs.board.settlement_owner[sid] = np.int8(pid)
-    gs.board.settlement_type[sid] = np.int8(SETTLEMENT)
+    _place_settlement(gs, pid, sid)
 
 def purchase_city(gs: GameState, cid: int):
     pid = gs.current_player_idx
@@ -240,10 +248,9 @@ def play_road_builder(gs: GameState, rid1: int, rid2: int):
 
 def setup_response(gs: GameState, sid: int, rid: int):
     pid = int(gs.current_player_idx)
-    gs.board.settlement_owner[sid] = np.int8(pid)
-    gs.board.settlement_type[sid] = np.int8(SETTLEMENT)
+
+    _place_settlement(gs, pid, sid)
     gs.board.road_owner[rid] = np.int8(pid)
-    gs.players[pid].settlements_built += 1
     gs.players[pid].roads_built += 1
 
     if gs.setup_turn_idx == (N_PLAYERS * 2) - 1:
