@@ -113,23 +113,25 @@ def distribute_resources(gs: GameState, total: int) -> None:
             if qty == 0:
                 continue
 
-            player_gains[owner, res] += qty
-            bank_losses[res] += qty
+            player_gains[owner, res] += int(qty)
+            bank_losses[res] += int(qty)
 
     bank_hand = gs.board.bank_res
     for _res in range(N_RES):
-        if bank_losses[_res] <= bank_hand[_res]:
+        want = int(bank_losses[_res])
+        have = int(bank_hand[_res])
+        if want <= have:
             continue
 
         # Case for when bank doesnt have enough.
-        _maximum = int(bank_hand[_res]); _player = 0
-        target_gains = player_gains[:, _res].astype(np.int32)
+        _player = 0
+        target_gains = player_gains[:,_res].astype(np.int32)
         temp_gains = np.zeros(N_PLAYERS, dtype=np.int16)
 
-        while temp_gains.sum() < _maximum:
+        while int(temp_gains.sum()) < have:
             if temp_gains[_player] < target_gains[_player]:
                 temp_gains[_player] += 1
-            _player = (_player + 1) % N_PLAYERS
+            _player = int((_player + 1) % N_PLAYERS)
         player_gains[:,_res] = temp_gains
         bank_losses[_res] = int(temp_gains.sum())
 
@@ -139,6 +141,8 @@ def distribute_resources(gs: GameState, total: int) -> None:
 
     if bank_losses.any():
         board.bank_res[:] = board.bank_res - bank_losses
+
+    assert (gs.board.bank_res >= 0).all(), f"Bank negative: {gs.board.bank_res} |"
 
 # --- Turn Mechanics
 def pass_turn(gs: GameState):
