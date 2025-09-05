@@ -71,6 +71,7 @@ def unpack_action(a: int) -> Tuple[int, int, int]:
 
 def get_response(a: int) -> int: return (a>>24)&0xFF
 def get_arg(a:int)->int:  return a&0xFFFFFF
+def get_arg2(a:int)->int: return a&0xFFF
 
 
 # Setup Turn
@@ -99,8 +100,8 @@ def act_select_robber_response(hex_id: int, victim_player_id: int) -> int: retur
 # Trading
 def pack_table_trade(give: list[int], take: list[int]) -> int:
     # give/take = length-5 arrays with values 0..3
-    g = sum((give[i] & 0b11) << (i*2) for i in range(5))  # 10 bits
-    t = sum((take[i] & 0b11) << (i*2) for i in range(5))  # 10 bits
+    g = sum((int(give[i]) & 0b11) << (i*2) for i in range(5))  # 10 bits
+    t = sum((int(take[i]) & 0b11) << (i*2) for i in range(5))  # 10 bits
     arg = (g << 10) | t  # 20 bits total
     return (TABLE_TRADE_PROPOSE << 24) | (arg & 0xFFFFFF)  # store in low 24 bits
 
@@ -117,12 +118,16 @@ def act_table_trade_select(player_id:int)->int: return pack_action(TABLE_TRADE_S
 def act_table_trade_accept()->int: return pack_action(TABLE_TRADE_ACCEPT)
 def act_table_trade_reject()->int: return pack_action(TABLE_TRADE_REJECT)
 
-def act_port_trade(give_res:int, rate_k:int, take_res:int)->int:
-    return pack_action(PORT_TRADE, (((give_res&0xF)<<4)|(rate_k&0xF))<<4 | (take_res&0xF))
+def act_port_trade(give_res:int, rate_k:int, take_res:int) -> int:
+    arg = ((give_res & 0xF) << 8) | ((rate_k & 0xF) << 4) | (take_res & 0xF)
+    return pack_action(PORT_TRADE, 0, arg)
 
-def unpack_port_trade(a:int)->tuple[int,int,int]:
-    arg=get_arg(a); take=arg&0xF; rate=(arg>>4)&0xF; give=(arg>>8)&0xF
-    return give,rate,take
+def unpack_port_trade(a:int) -> tuple[int,int,int]:
+    arg  = get_arg2(a)                 # <-- read arg2, where we packed it
+    give = (arg >> 8) & 0xF
+    rate = (arg >> 4) & 0xF
+    take = arg & 0xF
+    return give, rate, take
 
 
 
