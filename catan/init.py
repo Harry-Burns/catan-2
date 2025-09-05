@@ -2,7 +2,7 @@ import numpy as np
 from dataclasses import replace
 
 from catan.ids import WOOD,BRICK,SHEEP,WHEAT,ORE, DESERT, N_RES, N_PLAYERS, EMPTY, NONE_PLAYER
-from catan.ids import KNIGHT, YEAR_OF_PLENTY, MONOPOLY, ROAD_BUILDER, VICTORY_POINT
+from catan.ids import KNIGHT, YEAR_OF_PLENTY, MONOPOLY, ROAD_BUILDER, VICTORY_POINT, BANK_STOCK
 from catan.actions import SETUP_TURN
 
 from catan.topology import generate_topology
@@ -16,9 +16,6 @@ NUMBER_DIST = np.array([5,2,6,3,8,10,9,12,11,4,8,10,9,4,5,6,3,11][::-1], dtype=n
 
 PORT_TYPES = np.array([-1,-1,-1,-1, WOOD,BRICK,SHEEP,WHEAT,ORE], dtype=np.int8)  # -1 means 3:1 any
 DEV_DIST = np.array([KNIGHT]*14 + [YEAR_OF_PLENTY]*2 + [ROAD_BUILDER]*2 + [MONOPOLY]*2 + [VICTORY_POINT]*5, dtype=np.uint8)
-
-BANK_RESOURCE_STOCK = 19
-
 
 def _shuffle_copy(arr: np.ndarray, rng: np.random.Generator) -> np.ndarray:
     out = arr.copy(); rng.shuffle(out); return out
@@ -62,7 +59,7 @@ def initialize_game(rng: np.random.Generator) -> GameState:
         settlement_type=np.full(n_sett, EMPTY, dtype=np.uint8),
         robber_hex=np.uint16(robber_hex),
         dev_deck=dev_deck,
-        bank_res=np.full(N_RES, BANK_RESOURCE_STOCK, dtype=np.int16),
+        bank_res=np.full(N_RES, BANK_STOCK, dtype=np.int16),
     )
 
     players = [
