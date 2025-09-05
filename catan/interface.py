@@ -11,7 +11,7 @@ from catan.actions import (
     act_build_road, act_build_settlement, act_build_city, act_purchase_dev,
     act_select_robber_response, 
     act_table_trade_accept, act_table_trade_reject, act_table_trade_select, act_table_trade_propose,
-    unpack_action
+    unpack_action, act_port_trade
 )
 
 from catan.ids import (
@@ -50,9 +50,12 @@ def _place_settlement(gs: GameState, pid: np.uint8, sid: int):
 
     # Add ports
     port_sett = gs.topology.port_settlement_ix
+    port_res = gs.topology.port_res_id
     for _portid, _sids in enumerate(port_sett):
         if sid in _sids:
-            gs.players[pid].ports_mask[_portid] = True
+            res = port_res[_portid]
+            bit = 0 if res == -1 else (res + 1)
+            gs.players[pid].ports_mask = np.uint8(int(gs.players[pid].ports_mask) | (1 << bit))
             break
 
 
@@ -195,8 +198,8 @@ def purchase_dev_card(gs: GameState):
     gs.players[pid].new_dev_cards[dev_card] += 1
 
 def _pay_bank(gs: GameState, pid: int, resources: np.ndarray):
-    gs.board.bank_res[:] = gs.board.bank_res + resources
-    gs.players[pid].hand[:] = gs.players[pid].hand - resources
+    gs.board.bank_res = gs.board.bank_res + resources
+    gs.players[pid].hand = gs.players[pid].hand - resources
 
 
 def play_knight(gs: GameState):
@@ -276,19 +279,21 @@ def setup_response(gs: GameState, sid: int, rid: int):
 # --- Trade Based
 def port_trade(gs: GameState, give: int, rate: int, take: int):
     pid = int(gs.current_player_idx)
-
     gs.players[pid].hand[give] -= rate
     gs.players[pid].hand[take] += 1
 
     gs.board.bank_res[give] += rate
     gs.board.bank_res[take] -= 1
 
-def trade(gs: GameState, pid1: int, pid2: int, give: np.ndarray, take: np.ndarray):
-    gs.players[pid1].hand[:] = gs.players[pid1].hand - give
-    gs.players[pid1].hand[:] = gs.players[pid1].hand + take
+    assert (gs.board.bank_res >= 0).all(), f"Bank negative: {gs.board.bank_res} |"
 
-    gs.players[pid2].hand[:] = gs.players[pid2].hand + give
-    gs.players[pid2].hand[:] = gs.players[pid2].hand - take
+
+def trade(gs: GameState, pid1: int, pid2: int, give: np.ndarray, take: np.ndarray):
+    gs.players[pid1].hand = gs.players[pid1].hand - give
+    gs.players[pid1].hand = gs.players[pid1].hand + take
+
+    gs.players[pid2].hand = gs.players[pid2].hand + give
+    gs.players[pid2].hand = gs.players[pid2].hand - take
 
 
 # --- Robber-based
@@ -495,9 +500,57 @@ def generate_robber_moves(gs: GameState) -> list[int]:
     return actions
 
 # --- Trading
+def _generate_port_trades(gs: GameState) -> list[int]:
+    pid = gs.current_player_idx
+    hand = gs.players[pid].hand
+    ports = gs.players[pid].ports_mask
+    bank = gs.board.bank_res
+    actions: list[int] = []
+
+    for _res in range(N_RES):
+        rate = 4
+        if(ports >> (_res + 1)) & 1:
+            rate = 2
+        elif ports & 1:
+            rate = 3
+
+        if hand[_res] >= rate:
+            for _res_recieved in range(N_RES):
+                if _res_recieved == _res: continue
+                if bank[_res_recieved] < 1: continue
+                actions.append(act_port_trade(_res, rate, _res_recieved))
+    return actions
+
+def _generate_player_trades(gs: GameState) -> list[int]:
+    pid = int(gs.current_player_idx)
+    hand = gs.players[pid].hand
+    bank = gs.board.bank_res
+
+    actions: list[int] = []
+
+    # TODO: Better implement trading
+    for res in range(N_RES):
+        for _res in range(N_RES):
+            if res == _res or hand[res] == 0 or bank[_res] == BANK_STOCK: continue
+            if hand[res] >= 1: 
+                give = np.zeros(N_RES, dtype=np.int16)
+                take = np.zeros(N_RES, dtype=np.int16)
+                give[res] = 1
+                take[_res] = 1
+
+                actions.append(act_table_trade_propose(give=give,take=take))
+            if hand[res] >= 2:
+                give = np.zeros(N_RES, dtype=np.int16)
+                take = np.zeros(N_RES, dtype=np.int16)
+                give[res] = 2
+                take[_res] = 1
+
+                actions.append(act_table_trade_propose(give=give,take=take))
+    return actions
+
 def generate_playable_trades(gs: GameState) -> list[int]:
-    # TODO: Implement - No trading moves allowed for now.
-    return []
+    if get_total_cards(gs, int(gs.current_player_idx)) == 0: return []
+    return _generate_port_trades(gs) + _generate_player_trades(gs)
 
 def trade_selection(gs: GameState) -> list[int]:
     proposer = int(gs.current_player_idx)

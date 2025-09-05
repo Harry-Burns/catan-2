@@ -23,7 +23,7 @@ from catan.ids import (
 
 def apply_action_inplace(gs: GameState, a: int, rng: np.random.Generator) -> None:
     action,arg1,arg2 = unpack_action(a)
-    player = gs.current_player_idx
+    player = int(gs.current_player_idx)
 
     # --- Setup Logic
     if action == SETUP_RESPONSE:
@@ -83,15 +83,16 @@ def apply_action_inplace(gs: GameState, a: int, rng: np.random.Generator) -> Non
     # --- Trades
     elif action == PORT_TRADE:
         give,rate,take = unpack_port_trade(a)
+        print(give,rate,take)
         port_trade(gs,give,rate,take)
         gs.prompt = PLAY_TURN
 
     elif action == TABLE_TRADE_PROPOSE:
         give,take = unpack_table_trade(a)
 
-        gs.trade_offer_give = give
-        gs.trade_offer_take = take
-        gs.trade_offer_from = gs.current_player_idx
+        gs.trade_offer_give = np.array(give, dtype=np.int8)
+        gs.trade_offer_take = np.array(take, dtype=np.int8)
+        gs.trade_offer_from = int(gs.current_player_idx)
         gs.trade_accept_mask.fill(False)
 
         gs.current_player_idx = np.uint8((gs.current_player_idx + 1) % N_PLAYERS)
@@ -111,9 +112,9 @@ def apply_action_inplace(gs: GameState, a: int, rng: np.random.Generator) -> Non
         gs.prompt = np.uint8(PLAY_TURN)
     elif action in [TABLE_TRADE_ACCEPT, TABLE_TRADE_REJECT]:
         if action == TABLE_TRADE_ACCEPT:
-            gs.trade_accept_mask[gs.current_player_idx] = True
+            gs.trade_accept_mask[player] = True
 
-        gs.current_player_idx = np.uint8((gs.current_player_idx + 1) % N_PLAYERS)
+        gs.current_player_idx = np.uint8((player + 1) % N_PLAYERS)
         
         if gs.current_player_idx != gs.current_player_turn_idx:
             gs.prompt = np.uint8(DECIDE_TRADE)
@@ -198,10 +199,10 @@ def playable_moves(gs: GameState) -> np.ndarray:
         return np.array(actions, dtype=np.int32)
     
     elif gs.prompt == DECIDE_TRADE:
-        actions = trade_decision()
+        actions = trade_decision(gs)
         return np.asarray(actions, dtype=np.int32)
     
     elif gs.prompt == DECIDE_ACCEPTEES:
-        actions = trade_selection()
+        actions = trade_selection(gs)
         return np.array(actions, dtype=np.int32)
     
