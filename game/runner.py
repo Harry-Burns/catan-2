@@ -50,8 +50,11 @@ class GameRunner:
             print("\n⛔ Game interrupted by user ⛔")
         except Exception as e:
             print(f"\n⛔ERROR⛔\nError: {e}\nTraceback: {traceback.format_exc()}")
-        print("⛔ Game Over! ⛔")
-        print(f"⛔ Winner: {self.engine.gs.winner} ⛔")
+            
+        if verbose:
+            print("⛔ Game Over! ⛔")
+            winner = self.engine.gs.winner
+            print(f"⛔ Winner: {winner}: {PLY2STR[winner] if winner != NONE_PLAYER else 'None'} ⛔")
 
     def play_action(self, verbose=False):
         gs = self.engine.gs
@@ -65,6 +68,6 @@ class GameRunner:
 
         action_name,_,_ = unpack_action(selected_action)
         if verbose: print(f"Selected Action: \"{RESPONSE2STR[action_name]}\"")
-        if verbose: print(f"Action Number: {len(gs.action_log)}")
+        if verbose: print(f"Actions Taken: {len(gs.action_log)}")
 
         self.engine.step(selected_action)
