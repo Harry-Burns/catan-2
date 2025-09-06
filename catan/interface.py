@@ -646,25 +646,26 @@ def get_longest_road(gs: GameState, pid: np.uint8, a: int) -> np.uint8:
         neigh_rids = gs.topology.settlement_adj_roads[sid]
         neigh_pids = [int(road_owner[r]) for r in neigh_rids if r >= 0 and int(road_owner[r]) not in (-1, pid)]
         
-        if len(neigh_pids) < 3: return gs.longest_road_owner
+        if len(neigh_pids) < 2: return gs.longest_road_owner
+        if neigh_pids[0] != neigh_pids[1]: return gs.longest_road_owner
 
-        if neigh_pids[0] == neigh_pids[1] or neigh_pids[1] == neigh_pids[2] or neigh_pids[2] == neigh_pids[0]:
-            blocked_neigh = neigh_pids[0] if neigh_pids[0] == neigh_pids[1] or neigh_pids[0] == neigh_pids[2] else neigh_pids[1]
-            new_length = _calculate_longest_road(gs, blocked_neigh)
-            gs.players[blocked_neigh].longest_road_len = new_length
+        affected_pid = int(neigh_pids[0])
+        new_length = _calculate_longest_road(gs, affected_pid)
+        gs.players[affected_pid].longest_road_len = np.uint8(new_length)
     
     elif action in (BUILD_ROAD, PLAY_ROAD_BUILDER):
-        length = _calculate_longest_road(gs, pid)
-        gs.players[pid].longest_road_len = length
+        new_length = _calculate_longest_road(gs, pid)
+        gs.players[pid].longest_road_len = np.uint8(new_length)
 
     # Check all roads against each-other
-    longest_pid = gs.longest_road_owner
-    longest_road = gs.players[longest_pid].longest_road_len if longest_pid != NONE_PLAYER else 0
+    longest_pid = int(gs.longest_road_owner)
+    lengths = [int(gs.players[p].longest_road_len) for p in range(N_PLAYERS)]
+
+    longest_road = int(gs.players[longest_pid].longest_road_len) if longest_pid != NONE_PLAYER else 0
 
     _longest_pid = longest_pid
-    for _pid in range(N_PLAYERS):
+    for _pid,_length in enumerate(lengths):
         if _pid == longest_pid: continue
-        _length = gs.players[_pid].longest_road_len
         if _length >= 5 and _length > longest_road:
             _longest_pid = _pid
 
