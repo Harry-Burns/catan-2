@@ -1,6 +1,7 @@
 import numpy as np
 from catan.state import GameState
 from catan.actions import unpack_action
+from catan.actions import BUILD_CITY, BUILD_SETTLEMENT, BUILD_ROAD
 
 class Player:
     def __init__(self, player_id):
@@ -18,5 +19,22 @@ class RandomPlayerDistributed(Player):
         playable_actions = [unpack_action(a)[0] for a in playable_moves]
         unique_actions = np.unique(playable_actions)
         selected_action = np.random.choice(unique_actions) 
+        _playable_moves = [a for i,a in enumerate(playable_moves) if playable_actions[i] == selected_action]
+        return _playable_moves[np.random.randint(len(_playable_moves))]
+
+class RandomPlayerWithRules(Player):
+    def decide(self, gs: GameState, playable_moves: np.ndarray):
+        playable_actions = [unpack_action(a)[0] for a in playable_moves]
+        unique_actions = np.unique(playable_actions)
+
+        if BUILD_CITY in unique_actions:
+            selected_action = BUILD_CITY
+        elif BUILD_SETTLEMENT in unique_actions:
+            selected_action = BUILD_SETTLEMENT
+        elif BUILD_ROAD in unique_actions:
+            selected_action = BUILD_ROAD
+        else:
+            selected_action = np.random.choice(unique_actions)
+
         _playable_moves = [a for i,a in enumerate(playable_moves) if playable_actions[i] == selected_action]
         return _playable_moves[np.random.randint(len(_playable_moves))]
