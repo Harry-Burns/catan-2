@@ -1,7 +1,8 @@
 import time
 import traceback
+from importlib import import_module
 
-from catan.ids import PLY2STR, NONE_PLAYER
+from catan.ids import PLY2STR, NONE_PLAYER, N_PLAYERS
 from catan.actions import PROMPT2STR, RESPONSE2STR, unpack_action
 
 from game.engine import Engine
@@ -9,9 +10,13 @@ from catan.engine import playable_moves
 from players.player import Player
 
 
-import requests
-from web.web_app import gamestate2api, GameState, Input
-def display_function(game_state: GameState):
+def display_function(game_state):
+    try:
+        from web.web_app import gamestate2api, GameState, Input  # heavy deps
+        import requests
+    except Exception:
+        return  # silently skip if UI not available
+
     board_state = gamestate2api(game_state)
     payload = Input(board=board_state)
 
@@ -23,6 +28,31 @@ def display_function(game_state: GameState):
     if resp.status_code != 200:
         print(resp.status_code)
 
+
+# --- Used for quick-parallel runs ---
+def _resolve_class(path: str):
+    mod, name = path.split(":")
+    return getattr(import_module(mod), name)
+
+def pure_runner(seed: int, player_cls_paths: list[str], max_steps: int = 10_000, offset: int=0):
+    from game.engine import Engine
+    from catan.engine import playable_moves, apply_action_inplace
+    from catan.ids import NONE_PLAYER
+    
+    PlayerClasses = [_resolve_class(p) for p in player_cls_paths]
+    eng = Engine(seed=int(seed))
+    gs = eng.gs
+    players = [PlayerClasses[i](player_id=i) for i in range(N_PLAYERS)]
+
+    steps = 0
+    while gs.winner == NONE_PLAYER and steps < max_steps:
+        moves = playable_moves(gs)
+        a = players[int(gs.current_player_idx)].decide(gs, moves)
+        apply_action_inplace(gs, a, eng.rng)
+        steps += 1
+
+    return {"steps": steps, "winner": int(gs.winner), "turns": gs.turn_index, "offset": offset}
+# --- ---------------------------- ---
 
 
 class GameRunner:

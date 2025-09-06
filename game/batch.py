@@ -1,63 +1,79 @@
 
 from dataclasses import dataclass
+import os
 from typing import List, Type, Tuple, Dict, Any
 import numpy as np
+from concurrent.futures import ProcessPoolExecutor
 
 from catan.ids import N_PLAYERS, NONE_PLAYER
 from players.player import Player
 
-from game.engine import Engine
-from game.runner import GameRunner
+from game.runner import pure_runner
 
 
 @dataclass
 class BatchSummary:
     games: int
-    wins: List[int]
-    win_rates: List[float]
+    turn_win_rates: List[int]
+    player_win_rates: List[int]    
     avg_steps: List[int]
+    avg_turns: List[int]
 
-def run_batch(
-    player_types: List[Type[Player]],
-    num_games: int,
-    base_seed: int,
-    max_steps: 100_000,
-    verbose: bool = False,
-) -> BatchSummary:
+
+@dataclass
+class BatchRunnerSettings:
+    player_cls_paths: List[str]
+    num_games: int = 1_000
+    base_seed: int = 42
+    max_steps: int = 10_000
+    verbose: bool = False
+
+    shuffle: bool = False
+
+
+def _worker(args: Tuple[int, List[str], int, int]) -> Dict[str, Any]:
+    seed, cls_paths, max_steps, offset = args
+    return pure_runner(seed, cls_paths, max_steps, offset)
+
+def run_batch(settings: BatchRunnerSettings) -> Tuple[BatchSummary, List[Dict[str,Any]]]:
+    player_cls_paths = settings.player_cls_paths
+    num_games = settings.num_games
+
+    assert len(settings.player_cls_paths) == 4, "Need four players!"
+
+    rng = np.random.default_rng(settings.base_seed)
+    seeds = rng.integers(1, 2**31 - 1, size=num_games, dtype=np.int64).tolist()
+    offsets = rng.integers(0,4,size=num_games, dtype=np.int64).tolist() if settings.shuffle else [0]*num_games
+    player_cls_paths_shuffled = [(player_cls_paths[offsets[i]:] + player_cls_paths[:offsets[i]]) for i in range(num_games)]
     
-    rng = np.random.default_rng(base_seed)
-    wins = np.zeros(N_PLAYERS, dtype=np.int32)
+    args_iter = [(int(seeds[i]), player_cls_paths_shuffled[i], settings.max_steps, offsets[i]) for i in range(num_games)]
 
-    details = []
+    with ProcessPoolExecutor(os.cpu_count()) as ex:
+        results = list(ex.map(_worker, args_iter))
+    
+    turn_wins = np.zeros((N_PLAYERS+1), dtype=np.int32) # 0..3 Players, 4 No Winner
+    player_wins = np.zeros((N_PLAYERS+1), dtype=np.int32) # 0..3 Players, 4 No Winner
 
-    for gid in range(num_games):
-        seed = int(rng.integers(1, 2**31 - 1))
-        engine = Engine(seed=seed)
-        players = [player_types[pid](player_id=pid) for pid in range(N_PLAYERS)]
+    for result in results:
+        winner = int(result["winner"])
+        player_winner = int((winner + result["offset"]) % N_PLAYERS)
 
-        runner = GameRunner(engine=engine, player_controllers=players)
-        runner.max_steps = max_steps
-        runner.play_game(verbose=verbose)
-
-        gs = runner.engine.gs
-
-        winner = int(gs.winner)
-        if winner != NONE_PLAYER:
-            wins[winner] += 1
+        if winner == NONE_PLAYER:
+            turn_wins[4] += 1
+            player_wins[4] += 1
+        else:
+            turn_wins[winner] += 1
+            player_wins[player_winner] += 1
         
-        details.append({
-            'gid': gid,
-            'winner': winner,
-            'steps': runner.steps,
-            'seed': seed
-        })
+    avg_steps = float(np.mean([d["steps"] for d in results])) if results else 0.0
+    avg_turns = float(np.mean([d["turns"] for d in results])) if results else 0.0
 
-    avg_steps = float(np.mean([d["steps"] for d in details])) if details else 0.0
     summary = BatchSummary(
         games=num_games,
-        wins=wins,
-        win_rates=[w / num_games for w in wins],
+        turn_win_rates=[w / num_games for w in turn_wins],
+        player_win_rates=[w / num_games for w in player_wins],
         avg_steps=avg_steps,
+        avg_turns=avg_turns
     )
 
-    return summary
+    return summary,results
