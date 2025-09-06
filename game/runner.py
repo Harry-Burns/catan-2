@@ -12,10 +12,10 @@ from players.player import Player
 
 def display_function(game_state):
     try:
-        from web.web_app import gamestate2api, GameState, Input  # heavy deps
+        from display.web.web_app import gamestate2api, GameState, Input  # heavy deps, so import only when required
         import requests
     except Exception:
-        return  # silently skip if UI not available
+        return  # skip if UI not available
 
     board_state = gamestate2api(game_state)
     payload = Input(board=board_state)
@@ -53,7 +53,6 @@ def pure_runner(seed: int, player_cls_paths: list[str], max_steps: int = 10_000,
 
     return {"steps": steps, "winner": int(gs.winner), "turns": gs.turn_index, "offset": offset}
 # --- ---------------------------- ---
-
 
 class GameRunner:
     def __init__(self, engine: Engine, player_controllers: list[Player]):
