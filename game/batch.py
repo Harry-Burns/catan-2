@@ -31,10 +31,13 @@ class BatchRunnerSettings:
 
     shuffle: bool = False
 
+    chunksize: int = 2
+
 
 def _worker(args: Tuple[int, List[str], int, int]) -> Tuple[Dict[str, Any],GameState]:
     seed, cls_paths, max_steps, offset = args
-    return pure_runner(seed, cls_paths, max_steps, offset)
+    result, _ = pure_runner(seed, cls_paths, max_steps, offset, return_gs=False)
+    return result, None
 
 def run_batch(settings: BatchRunnerSettings) -> Tuple[BatchSummary, List[Dict[str,Any]]]:
     player_cls_paths = settings.player_cls_paths
@@ -49,8 +52,9 @@ def run_batch(settings: BatchRunnerSettings) -> Tuple[BatchSummary, List[Dict[st
     
     args_iter = [(int(seeds[i]), player_cls_paths_shuffled[i], settings.max_steps, offsets[i]) for i in range(num_games)]
 
+    chunksize = settings.chunksize
     with ProcessPoolExecutor(os.cpu_count()) as ex:
-        output = list(ex.map(_worker, args_iter))
+        output = list(ex.map(_worker, args_iter, chunksize=chunksize))
     
     results, gamestates = zip(*output)
     results = list(results); gamestates = list(gamestates)

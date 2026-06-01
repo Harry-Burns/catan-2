@@ -34,7 +34,7 @@ def _resolve_class(path: str):
     mod, name = path.split(":")
     return getattr(import_module(mod), name)
 
-def pure_runner(seed: int, player_cls_paths: list[str], max_steps: int = 10_000, offset: int=0):
+def pure_runner(seed: int, player_cls_paths: list[str], max_steps: int = 10_000, offset: int=0, return_gs: bool=False):
     from game.engine import Engine
     from catan.engine import playable_moves, apply_action_inplace
     from catan.ids import NONE_PLAYER
@@ -51,7 +51,7 @@ def pure_runner(seed: int, player_cls_paths: list[str], max_steps: int = 10_000,
         apply_action_inplace(gs, a, eng.rng)
         steps += 1
 
-    return {"steps": steps, "winner": int(gs.winner), "turns": gs.turn_index, "offset": offset},gs
+    return {"steps": steps, "winner": int(gs.winner), "turns": gs.turn_index, "offset": offset},(gs if return_gs else None)
 # --- ---------------------------- ---
 
 class GameRunner:
@@ -95,8 +95,9 @@ class GameRunner:
         possible_moves = playable_moves(gs)
         selected_action = player_ctrl.decide(gs, possible_moves)
 
-        action_name,_,_ = unpack_action(selected_action)
-        if verbose: print(f"Selected Action: \"{RESPONSE2STR[action_name]}\"")
-        if verbose: print(f"Actions Taken: {len(gs.action_log)}")
+        if verbose: 
+            action_name,_,_ = unpack_action(selected_action)
+            print(f"Selected Action: \"{RESPONSE2STR[action_name]}\"")
+            print(f"Actions Taken: {len(gs.action_log)}")
 
         self.engine.step(selected_action)
