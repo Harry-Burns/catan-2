@@ -129,6 +129,41 @@ def unpack_port_trade(a:int) -> tuple[int,int,int]:
     take = arg & 0xF
     return give, rate, take
 
+# ----------- PRECOMPUTED FOR SPECIFIC BOARD SHAPE -----------
+## --- Pre-computed lookup tables for ML hot-path optimization
+_N_ROADS = 72
+_N_NODES = 54
+_N_HEXES = 19
+_N_RES_T = 5
+_N_PLY_T = 16  # 0..15, covers NONE_PLAYER=15
+
+# No-arg action constants
+ACT_PLAY_KNIGHT  = pack_action(PLAY_KNIGHT)
+ACT_ROLL         = pack_action(ROLL)
+ACT_PASS         = pack_action(PASS)
+ACT_PURCHASE_DEV = pack_action(PURCHASE_DEV_CARD)
+ACT_TRADE_ACCEPT = pack_action(TABLE_TRADE_ACCEPT)
+ACT_TRADE_REJECT = pack_action(TABLE_TRADE_REJECT)
+
+# Single-arg tables
+BUILD_ROAD_TABLE         = [pack_action(BUILD_ROAD, i)         for i in range(_N_ROADS)]
+BUILD_SETTLEMENT_TABLE   = [pack_action(BUILD_SETTLEMENT, i)   for i in range(_N_NODES)]
+BUILD_CITY_TABLE         = [pack_action(BUILD_CITY, i)         for i in range(_N_NODES)]
+DISCARD_TABLE            = [pack_action(DISCARD_RESOURCE, r)   for r in range(_N_RES_T)]
+MONOPOLY_TABLE           = [pack_action(PLAY_MONOPOLY, r)      for r in range(_N_RES_T)]
+TABLE_TRADE_SELECT_TABLE = [pack_action(TABLE_TRADE_SELECT, p) for p in range(_N_PLY_T)]
+
+# Two-arg tables
+YOP_TABLE           = [[pack_action(PLAY_YEAR_OF_PLENTY, r1, r2)   for r2 in range(_N_RES_T)] for r1 in range(_N_RES_T)]
+YOP_TABLE_FLAT      = [pack_action(PLAY_YEAR_OF_PLENTY, r1, r2)    for r1 in range(_N_RES_T) for r2 in range(_N_RES_T)]
+ROAD_BUILDER_TABLE  = [[pack_action(PLAY_ROAD_BUILDER, r1, r2)     for r2 in range(_N_ROADS)] for r1 in range(_N_ROADS)]
+SELECT_ROBBER_TABLE = [[pack_action(SELECT_ROBBER_RESPONSE, h, v)  for v in range(_N_PLY_T)] for h in range(_N_HEXES)]
+# PORT_TRADE_TABLE[give_res][rate-2][take_res]  (rate ∈ {2,3,4})
+PORT_TRADE_TABLE    = [[[pack_action(PORT_TRADE, 0, ((g & 0xF) << 8) | ((k & 0xF) << 4) | (t & 0xF))
+                         for t in range(_N_RES_T)]
+                        for k in range(2, 5)]
+                       for g in range(_N_RES_T)]
+
 
 
 

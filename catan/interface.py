@@ -1,17 +1,17 @@
 import numpy as np
-from itertools import product
 
 from catan.state import GameState
 
 from catan.actions import (
     DISCARD, MOVE_ROBBER, PLAY_PRETURN, SETUP_TURN, BUILD_SETTLEMENT, BUILD_ROAD, PLAY_ROAD_BUILDER,
 
-    act_setup, 
-    act_play_knight, act_play_monopoly, act_play_road_builder, act_play_yop,
-    act_build_road, act_build_settlement, act_build_city, act_purchase_dev,
-    act_select_robber_response, 
-    act_table_trade_accept, act_table_trade_reject, act_table_trade_select, act_table_trade_propose,
-    unpack_action, act_port_trade
+    act_setup, act_table_trade_propose,
+    unpack_action,
+
+    ACT_PLAY_KNIGHT, ACT_PURCHASE_DEV, ACT_TRADE_ACCEPT, ACT_TRADE_REJECT,
+    MONOPOLY_TABLE, YOP_TABLE_FLAT, ROAD_BUILDER_TABLE,
+    BUILD_ROAD_TABLE, BUILD_SETTLEMENT_TABLE, BUILD_CITY_TABLE,
+    SELECT_ROBBER_TABLE, TABLE_TRADE_SELECT_TABLE, PORT_TRADE_TABLE,
 )
 
 from catan.ids import (
@@ -392,17 +392,17 @@ def generate_playable_dev_card_moves(gs: GameState) -> list[int]:
     dev_cards = gs.players[pid].dev_cards
 
     if dev_cards[KNIGHT] > 0:
-        actions.append(act_play_knight())
+        actions.append(ACT_PLAY_KNIGHT)
 
     if dev_cards[MONOPOLY] > 0:
-        actions.extend([act_play_monopoly(res) for res in range(N_RES)])
+        actions.extend(MONOPOLY_TABLE)
 
     if dev_cards[YEAR_OF_PLENTY] > 0:
-        actions.extend([act_play_yop(res1, res2) for res1,res2 in product(range(N_RES), range(N_RES))])
+        actions.extend(YOP_TABLE_FLAT)
 
     if dev_cards[ROAD_BUILDER] > 0:
         road_pairs = _generate_playable_road_builder(gs)
-        actions.extend([act_play_road_builder(rid1, rid2) for rid1,rid2 in road_pairs])
+        actions.extend(ROAD_BUILDER_TABLE[rid1][rid2] for rid1,rid2 in road_pairs)
 
     return actions
 
@@ -458,16 +458,16 @@ def generate_playable_purchases(gs: GameState) -> list[int]:
     afford =  (hand[None, :] >= COSTS).all(axis=1)
 
     if afford[OBJ_ROAD] and gs.players[pid].roads_built < ROADS_ALLOWED:
-        actions.extend([act_build_road(int(rid)) for rid in _get_placeable_roads(gs)])
+        actions.extend(BUILD_ROAD_TABLE[int(rid)] for rid in _get_placeable_roads(gs))
 
     if afford[OBJ_SETTLEMENT] and gs.players[pid].settlements_built < SETTLEMENTS_ALLOWED:
-        actions.extend([act_build_settlement(int(sid)) for sid in _get_placeable_settlements(gs)])
+        actions.extend(BUILD_SETTLEMENT_TABLE[int(sid)] for sid in _get_placeable_settlements(gs))
 
     if afford[OBJ_CITY] and gs.players[pid].cities_built < CITIES_ALLOWED:
-        actions.extend([act_build_city(int(cid)) for cid in _get_placeable_cities(gs)])
+        actions.extend(BUILD_CITY_TABLE[int(cid)] for cid in _get_placeable_cities(gs))
 
     if afford[OBJ_DEV] and gs.board.dev_deck.any():
-        actions.append(act_purchase_dev())
+        actions.append(ACT_PURCHASE_DEV)
 
     return actions
 
@@ -494,8 +494,8 @@ def generate_robber_moves(gs: GameState) -> list[int]:
                 continue
             victims.add(owner)
 
-        actions.extend([act_select_robber_response(int(hid),int(_pid)) for _pid in victims])
-        actions.append(act_select_robber_response(int(hid),int(NONE_PLAYER)))
+        actions.extend(SELECT_ROBBER_TABLE[hid][int(_pid)] for _pid in victims)
+        actions.append(SELECT_ROBBER_TABLE[hid][NONE_PLAYER])
 
     return actions
 
@@ -518,7 +518,7 @@ def _generate_port_trades(gs: GameState) -> list[int]:
             for _res_recieved in range(N_RES):
                 if _res_recieved == _res: continue
                 if bank[_res_recieved] < 1: continue
-                actions.append(act_port_trade(_res, rate, _res_recieved))
+                actions.append(PORT_TRADE_TABLE[_res][rate - 2][_res_recieved])
     return actions
 
 def _generate_player_trades(gs: GameState) -> list[int]:
@@ -561,7 +561,7 @@ def trade_selection(gs: GameState) -> list[int]:
         if pid == proposer:
             continue
         if accepted:
-            actions.append(act_table_trade_select(pid))
+            actions.append(TABLE_TRADE_SELECT_TABLE[pid])
     return actions
 
 def trade_decision(gs: GameState) -> list[int]:
@@ -569,10 +569,10 @@ def trade_decision(gs: GameState) -> list[int]:
     hand = gs.players[pid].hand
     take = gs.trade_offer_take
 
-    actions = [act_table_trade_reject()]
+    actions = [ACT_TRADE_REJECT]
 
     if np.all(hand >= take):
-        actions.insert(0, act_table_trade_accept())
+        actions.insert(0, ACT_TRADE_ACCEPT)
     return actions
 
 
