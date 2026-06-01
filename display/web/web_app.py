@@ -5,7 +5,7 @@ from fastapi.responses import HTMLResponse, FileResponse
 import uvicorn
 import requests
 
-from web.api_adapter import *
+from display.web.api_adapter import *
 
 class Input(BaseModel):
     board: ExtendedBoardState
