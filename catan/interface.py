@@ -588,53 +588,57 @@ def get_largest_army(gs: GameState, pid: np.uint8) -> np.uint8:
     return np.uint8(pid) if army_size > gs.players[larg_pid].used_knights else np.uint8(larg_pid)
 
 def _calculate_longest_road(gs: GameState, pid: np.uint8) -> int:
-    road_owner = gs.board.road_owner
-    sett_owner = gs.board.settlement_owner
-    road_adj_sett = gs.topology.road_adj_settlement
-    
-    my_roads = np.where(road_owner == pid)[0]
+    road_owner     = gs.board.road_owner
+    sett_owner     = gs.board.settlement_owner
+    road_adj_sett  = gs.topology.road_adj_settlement
+
+    # roads you own
+    my_roads = [int(r) for r in np.where(road_owner == pid)[0]]
+    if not my_roads:
+        return 0
+
+    # settlements that block traversal (enemy)
     enemy_sett = set(int(s) for s in np.where((sett_owner != -1) & (sett_owner != pid))[0])
 
-    # build settlement -> my roads incidence for fast neighbor lookup
-    sett_to_my_roads = {}
+    # settlement -> list of *your* incident roads (only if settlement not blocked)
+    sett_to_roads: dict[int, list[int]] = {}
+    endpoints: dict[int, tuple[int, int]] = {}
+
     for r in my_roads:
-        sA, sB = int(road_adj_sett[r,0]), int(road_adj_sett[r,1])
+        sA, sB = int(road_adj_sett[r, 0]), int(road_adj_sett[r, 1])
+        endpoints[r] = (sA, sB)
         if sA >= 0 and sA not in enemy_sett:
-            sett_to_my_roads.setdefault(sA, []).append(r)
+            sett_to_roads.setdefault(sA, []).append(r)
         if sB >= 0 and sB not in enemy_sett:
-            sett_to_my_roads.setdefault(sB, []).append(r)
+            sett_to_roads.setdefault(sB, []).append(r)
 
-    # DFS over edges (roads) without reusing edges
-    visited = set()
+    used_edges: set[int] = set()
 
-    def dfs(cur_road: int, came_from_sett: int) -> int:
-        visited.add(cur_road)
-        best = 1  # count this road
-        sA, sB = int(road_adj_sett[cur_road,0]), int(road_adj_sett[cur_road,1])
-
-        # Explore from each endpoint that is not blocked
-        for s in (sA, sB):
-            if s < 0 or s in enemy_sett:
+    def dfs_from_settlement(s: int) -> int:
+        """Longest simple path length starting at settlement s (edges not reused)."""
+        best = 0
+        for r in sett_to_roads.get(s, ()):
+            if r in used_edges:
                 continue
-            # Next roads are my roads incident on this settlement
-            for nxt in sett_to_my_roads.get(s, []):
-                if nxt in visited or nxt == cur_road:
-                    continue
-                # Move along to next edge
-                length = 1 + dfs(nxt, s)
-                if length > best:
-                    best = length
+            a, b = endpoints[r]
+            t = b if s == a else a
 
-        visited.remove(cur_road)
+            used_edges.add(r)
+            cont = 0
+            if t >= 0 and t not in enemy_sett:
+                cont = dfs_from_settlement(t)
+            used_edges.remove(r)
+
+            length = 1 + cont
+            if length > best:
+                best = length
         return best
 
     longest = 0
-    # Try each owned road as a starting edge
-    for r in my_roads:
-        val = dfs(r, -1)
-        if val > longest:
-            longest = val
-
+    for s in sett_to_roads.keys():  # try all possible starts
+        v = dfs_from_settlement(s)
+        if v > longest:
+            longest = v
     return int(longest)
 
 def get_longest_road(gs: GameState, pid: np.uint8, a: int) -> np.uint8:
