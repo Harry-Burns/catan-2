@@ -51,7 +51,7 @@ def pure_runner(seed: int, player_cls_paths: list[str], max_steps: int = 10_000,
         apply_action_inplace(gs, a, eng.rng)
         steps += 1
 
-    return {"steps": steps, "winner": int(gs.winner), "turns": gs.turn_index, "offset": offset}
+    return {"steps": steps, "winner": int(gs.winner), "turns": gs.turn_index, "offset": offset},gs
 # --- ---------------------------- ---
 
 class GameRunner:

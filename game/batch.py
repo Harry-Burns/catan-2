@@ -6,6 +6,7 @@ import numpy as np
 from concurrent.futures import ProcessPoolExecutor
 
 from catan.ids import N_PLAYERS, NONE_PLAYER
+from catan.state import GameState
 from players.player import Player
 
 from game.runner import pure_runner
@@ -31,7 +32,7 @@ class BatchRunnerSettings:
     shuffle: bool = False
 
 
-def _worker(args: Tuple[int, List[str], int, int]) -> Dict[str, Any]:
+def _worker(args: Tuple[int, List[str], int, int]) -> Tuple[Dict[str, Any],GameState]:
     seed, cls_paths, max_steps, offset = args
     return pure_runner(seed, cls_paths, max_steps, offset)
 
@@ -49,8 +50,11 @@ def run_batch(settings: BatchRunnerSettings) -> Tuple[BatchSummary, List[Dict[st
     args_iter = [(int(seeds[i]), player_cls_paths_shuffled[i], settings.max_steps, offsets[i]) for i in range(num_games)]
 
     with ProcessPoolExecutor(os.cpu_count()) as ex:
-        results = list(ex.map(_worker, args_iter))
+        output = list(ex.map(_worker, args_iter))
     
+    results, gamestates = zip(*output)
+    results = list(results); gamestates = list(gamestates)
+
     turn_wins = np.zeros((N_PLAYERS+1), dtype=np.int32) # 0..3 Players, 4 No Winner
     player_wins = np.zeros((N_PLAYERS+1), dtype=np.int32) # 0..3 Players, 4 No Winner
 
@@ -76,4 +80,4 @@ def run_batch(settings: BatchRunnerSettings) -> Tuple[BatchSummary, List[Dict[st
         avg_turns=avg_turns
     )
 
-    return summary,results
+    return summary,results,gamestates
