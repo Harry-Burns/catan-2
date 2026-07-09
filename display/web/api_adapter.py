@@ -2,8 +2,15 @@
 import numpy as np
 from typing import Optional
 
-from catan.ids import RES2STR, PLY2STR, EMPTY, CITY, N_RES
+from catan.ids import (
+    RES2STR, PLY2STR, DEV2STR, EMPTY, CITY, N_RES, N_DEV_CARDS,
+    KNIGHT, VICTORY_POINT,
+    ROADS_ALLOWED, SETTLEMENTS_ALLOWED, CITIES_ALLOWED,
+    VICTORY_POINTS_REQUIRED, NONE_PLAYER,
+)
 from catan.state import GameState
+from catan.interface import get_victory_points
+from catan.actions import PROMPT2STR
 
 from pydantic import BaseModel, Field
 from typing import List, Optional, Literal, Dict
@@ -42,12 +49,66 @@ class RoadState(BaseModel):
     player: str
     location: RoadLocation
 
-# New model for displaying player data in the API
+# A single port a player has access to (for the player panel).
+class PlayerPort(BaseModel):
+    type: Literal['wood', 'brick', 'sheep', 'wheat', 'ore', 'generic']
+    ratio: int  # 2 or 3
+
+# Rich per-player display data.
 class PlayerDisplayData(BaseModel):
-    player_id: str  # e.g., 'red', 'blue'
-    resources: Dict[FastResource, int]  # e.g., {'wood': 2, 'brick': 1, ...}
-    dev_card_count: int
+    player_id: str                       # e.g. 'red', 'blue'
     is_current_player: bool = False
+    is_winner: bool = False
+
+    # Victory points
+    victory_points: int = 0              # true total (incl. hidden VP dev cards)
+    victory_points_public: int = 0       # what opponents can see (excludes hidden VP cards)
+
+    # Resources
+    resources: Dict[FastResource, int]   # e.g. {'wood': 2, 'brick': 1, ...}
+    resource_total: int = 0
+
+    # Development cards
+    dev_cards: Dict[str, int] = {}       # playable dev cards by type
+    new_dev_cards: Dict[str, int] = {}   # bought this turn (not yet playable)
+    dev_card_count: int = 0              # grand total of all dev cards held
+
+    # Awards / army / roads
+    knights_played: int = 0
+    longest_road_length: int = 0
+    has_longest_road: bool = False
+    has_largest_army: bool = False
+
+    # Buildings (built / limit / remaining)
+    settlements_built: int = 0
+    cities_built: int = 0
+    roads_built: int = 0
+    settlements_remaining: int = 0
+    cities_remaining: int = 0
+    roads_remaining: int = 0
+
+    # Ports the player can trade through
+    ports: List[PlayerPort] = []
+
+    # Misc
+    discards_required: int = 0
+
+# Global game / board information.
+class GameInfo(BaseModel):
+    turn_index: int = 0
+    current_player: Optional[str] = None
+    phase: str = ""
+    in_setup: bool = False
+    winner: Optional[str] = None
+    vp_to_win: int = VICTORY_POINTS_REQUIRED
+
+    bank: Dict[FastResource, int] = {}
+    dev_cards_remaining: int = 0
+
+    longest_road_owner: Optional[str] = None
+    longest_road_length: int = 0
+    largest_army_owner: Optional[str] = None
+    largest_army_size: int = 0
 
 # Extended BoardState model
 class ExtendedBoardState(BaseModel): # Renamed to avoid conflict if old BoardState is used elsewhere
@@ -55,14 +116,22 @@ class ExtendedBoardState(BaseModel): # Renamed to avoid conflict if old BoardSta
     settlements: List[SettlementState] = []
     roads: List[RoadState] = []
     ports: List[PortState] = []
-    # New fields for player info and dice roll
+    # Player info, dice roll and global game info
     players_data: List[PlayerDisplayData] = []
     last_dice_roll: Optional[tuple[int, int]] = None
-    # You could add more global game state info here if needed, e.g.:
-    # current_turn_player_id: Optional[str] = None
-    # game_over: bool = False
+    game_info: Optional[GameInfo] = None
 
 
+def _decode_ports(ports_mask: int) -> List[PlayerPort]:
+    """ports_mask: bit0 = 3:1 generic, bits 1..5 = 2:1 for resource (res+1)."""
+    ports: List[PlayerPort] = []
+    mask = int(ports_mask)
+    if mask & 1:
+        ports.append(PlayerPort(type="generic", ratio=3))
+    for res in range(N_RES):
+        if (mask >> (res + 1)) & 1:
+            ports.append(PlayerPort(type=RES2STR[res], ratio=2))
+    return ports
 
 
 def gamestate2api(gs: GameState) -> ExtendedBoardState:
@@ -171,17 +240,69 @@ def gamestate2api(gs: GameState) -> ExtendedBoardState:
             )
         )
 
-    # ---------- Players (public display) ----------
+    # ---------- Players (rich display) ----------
+    lr_owner = int(gs.longest_road_owner)
+    la_owner = int(gs.largest_army_owner)
+    winner = int(gs.winner)
+
     players_api = []
     for pid, p in enumerate(gs.players):
+        playable_dev = {DEV2STR[i]: int(p.dev_cards[i]) for i in range(N_DEV_CARDS)}
+        new_dev = {DEV2STR[i]: int(p.new_dev_cards[i]) for i in range(N_DEV_CARDS)}
+        dev_total = int(p.dev_cards.sum()) + int(p.new_dev_cards.sum())
+
+        vp_true = int(get_victory_points(gs, pid))
+        hidden_vp = int(p.dev_cards[VICTORY_POINT]) + int(p.new_dev_cards[VICTORY_POINT])
+        vp_public = vp_true - hidden_vp
+
         players_api.append(
             PlayerDisplayData(
                 player_id=PLY2STR[pid],
-                resources={RES2STR[i]: int(p.hand[i]) for i in range(N_RES)},
-                dev_card_count=int(np.int32(p.dev_cards.sum())),
                 is_current_player=(pid == int(gs.current_player_idx)),
+                is_winner=(pid == winner),
+                victory_points=vp_true,
+                victory_points_public=vp_public,
+                resources={RES2STR[i]: int(p.hand[i]) for i in range(N_RES)},
+                resource_total=int(p.hand.sum()),
+                dev_cards=playable_dev,
+                new_dev_cards=new_dev,
+                dev_card_count=dev_total,
+                knights_played=int(p.used_knights),
+                longest_road_length=int(p.longest_road_len),
+                has_longest_road=(lr_owner == pid),
+                has_largest_army=(la_owner == pid),
+                settlements_built=int(p.settlements_built),
+                cities_built=int(p.cities_built),
+                roads_built=int(p.roads_built),
+                settlements_remaining=SETTLEMENTS_ALLOWED - int(p.settlements_built),
+                cities_remaining=CITIES_ALLOWED - int(p.cities_built),
+                roads_remaining=ROADS_ALLOWED - int(p.roads_built),
+                ports=_decode_ports(p.ports_mask),
+                discards_required=int(p.discards_required),
             )
         )
+
+    # ---------- Global game info ----------
+    prompt_idx = int(gs.prompt)
+    phase = PROMPT2STR[prompt_idx] if 0 <= prompt_idx < len(PROMPT2STR) else str(prompt_idx)
+
+    lr_len = int(gs.players[lr_owner].longest_road_len) if lr_owner != NONE_PLAYER else 0
+    la_size = int(gs.players[la_owner].used_knights) if la_owner != NONE_PLAYER else 0
+
+    game_info = GameInfo(
+        turn_index=int(gs.turn_index),
+        current_player=PLY2STR[int(gs.current_player_idx)],
+        phase=phase,
+        in_setup=bool(gs.in_setup),
+        winner=(PLY2STR[winner] if winner != NONE_PLAYER else None),
+        vp_to_win=VICTORY_POINTS_REQUIRED,
+        bank={RES2STR[i]: int(board.bank_res[i]) for i in range(N_RES)},
+        dev_cards_remaining=int(len(board.dev_deck)),
+        longest_road_owner=(PLY2STR[lr_owner] if lr_owner != NONE_PLAYER else None),
+        longest_road_length=lr_len,
+        largest_army_owner=(PLY2STR[la_owner] if la_owner != NONE_PLAYER else None),
+        largest_army_size=la_size,
+    )
 
     # ---------- Optional last dice (if you store it) ----------
     last_roll = getattr(gs, "last_dice_roll_values", None)
@@ -193,4 +314,5 @@ def gamestate2api(gs: GameState) -> ExtendedBoardState:
         ports=port_states,
         players_data=players_api,
         last_dice_roll=last_roll,
+        game_info=game_info,
     )

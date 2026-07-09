@@ -6,194 +6,300 @@
     <title>Catan Board</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        /* Basic body styling using Inter font (Tailwind default) */
-        body { font-family: 'Inter', sans-serif; }
+        :root {
+            --bg: #2b2f33;
+            --panel: #3a3f44;
+            --panel-2: #454b51;
+            --border: #5a616a;
+            --text: #e8eaed;
+            --text-dim: #a7afb8;
+            --accent: #4ea1ff;
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: 'Inter', system-ui, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            margin: 0;
+        }
 
-        /* Container for the entire Catan board application */
         .catan-container {
             display: flex;
             flex-direction: column;
             align-items: center;
-            padding: 1rem; /* 16px */
+            padding: 1rem;
             min-height: 100vh;
-            background-color: #52565a; /* A light, neutral background for the page */
-            position: relative; /* Crucial for positioning child elements absolutely */
+            gap: 1rem;
         }
 
-        /* Styling for the SVG container, giving it a 'water' backdrop and shadow */
-        #catan-board-svg-container {
-            width: 90vw; /* Responsive width, takes 90% of the viewport width */
-            max-width: 800px; /* Maximum width for larger screens to keep it manageable */
-            background-color: #577488; /* Light blue, simulating water around the island */
-            padding: 10px; /* Padding around the SVG element */
-            border-radius: 12px; /* Rounded corners for the container */
-            box-shadow: 0 10px 20px rgba(0,0,0,0.1); /* Subtle shadow for depth */
-            margin-top: 60px; /* Add margin to prevent overlap with dice display */
-        }
-
-        /* Styling for the SVG element itself */
-        #catan-board-svg {
-            display: block; /* Removes extra space below the SVG if it were inline */
-            width: 100%; /* SVG takes full width of its container */
-            height: auto; /* Height adjusts to maintain aspect ratio defined by viewBox */
-        }
-
-        /* Styling for the controls area (e.g., buttons) */
-        .controls button {
-            transition: background-color 0.3s, transform 0.1s;
-        }
-        .controls button:active {
-            transform: translateY(1px); /* Slight press down effect on click */
-        }
-
-        /* Player Info Box Styling */
-        .player-info {
-            position: absolute;
-            width: 220px; /* Adjusted width */
-            padding: 12px;
-            border: 2px solid #718096; /* Tailwind gray-600 */
-            border-radius: 8px;
-            background-color: rgba(255, 255, 255, 0.92); /* Slightly more opaque */
-            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
-            font-size: 0.875rem; /* text-sm */
-            z-index: 10; /* Ensure they are above the board SVG if overlapping occurs */
-        }
-        .player-info h3 {
-            font-size: 1rem; /* text-base */
-            font-weight: 600; /* semibold */
-            margin-bottom: 8px;
-            border-bottom: 1px solid #E2E8F0; /* Tailwind gray-300 */
-            padding-bottom: 6px;
-        }
-        .player-info .section-title {
-            font-weight: 600; /* semibold */
-            margin-top: 8px;
-            margin-bottom: 4px;
-            font-size: 0.8rem;
-        }
-        .player-info .resources div, .player-info .dev-cards p {
-            margin-bottom: 3px;
-            padding-left: 8px;
-        }
-        .player-info.current-player {
-            border-width: 3px;
-            box-shadow: 0 0 12px 2px gold, 0 4px 8px rgba(0,0,0,0.2); /* Enhanced glow */
-        }
-        .resource-item {
+        /* ---- Top status bar ---- */
+        .status-bar {
+            width: 100%;
+            max-width: 1450px;
             display: flex;
+            flex-wrap: wrap;
             align-items: center;
-            margin-bottom: 2px;
+            justify-content: space-between;
+            gap: 12px;
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 12px 18px;
         }
-        .resource-icon {
-            display: inline-block;
-            width: 14px;
-            height: 14px;
-            margin-right: 6px;
-            border-radius: 3px;
-            border: 1px solid rgba(0,0,0,0.2);
+        .status-title { font-size: 1.4rem; font-weight: 700; letter-spacing: -0.01em; }
+        .status-chips { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+        .chip {
+            background: var(--panel-2);
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            padding: 5px 12px;
+            font-size: 0.8rem;
+            white-space: nowrap;
         }
+        .chip b { color: #fff; font-weight: 600; }
+        .chip.dice { font-weight: 700; color: #fff; }
+        .chip.winner { background: #b8860b; border-color: #ffd700; color: #fff; font-weight: 700; }
+        .chip.phase { color: var(--accent); }
 
-        /* Positioning for Player Info Boxes */
-        .top-left { top: 70px; left: 20px; } /* Adjusted top to avoid title/button */
-        .top-right { top: 70px; right: 20px; }
-        .bottom-left { bottom: 20px; left: 20px; }
-        .bottom-right { bottom: 20px; right: 20px; }
-
-        /* Dice Roll Display Styling */
-        #dice-roll-display {
-            position: absolute;
-            top: 70px; /* Position below the main title/refresh button */
-            left: 50%;
-            transform: translateX(-50%);
+        button#refresh-button {
+            background: var(--accent);
+            color: #fff;
+            border: none;
             padding: 8px 16px;
-            background-color: #ffffff;
-            border: 2px solid #4A5568; /* Tailwind gray-700 */
             border-radius: 8px;
-            font-size: 1.25rem; /* text-xl */
-            font-weight: bold;
-            color: #2D3748; /* Tailwind gray-800 */
-            box-shadow: 0 3px 6px rgba(0,0,0,0.1);
-            z-index: 100;
-            min-width: 180px;
-            text-align: center;
+            font-weight: 600;
+            cursor: pointer;
+            transition: filter 0.15s, transform 0.1s;
         }
+        button#refresh-button:hover { filter: brightness(1.1); }
+        button#refresh-button:active { transform: translateY(1px); }
+        button#refresh-button:disabled { opacity: 0.6; cursor: default; }
 
+        /* ---- Main layout: board + side panels ---- */
+        .main-layout {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem;
+            width: 100%;
+            max-width: 1450px;
+            justify-content: center;
+            align-items: flex-start;
+        }
+        .board-column { display: flex; flex-direction: column; gap: 1rem; flex: 1 1 560px; min-width: 320px; max-width: 850px; }
+
+        #catan-board-svg-container {
+            width: 100%;
+            background-color: #3f6478;
+            padding: 12px;
+            border-radius: 12px;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.25);
+            border: 1px solid var(--border);
+        }
+        #catan-board-svg { display: block; width: 100%; height: auto; }
+
+        /* ---- Bank / awards strip ---- */
+        .info-strip {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 12px 16px;
+        }
+        .info-block { flex: 1 1 auto; }
+        .info-block .label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-dim); margin-bottom: 6px; }
+        .bank-resources { display: flex; flex-wrap: wrap; gap: 8px; }
+        .bank-res {
+            display: flex; align-items: center; gap: 5px;
+            background: var(--panel-2); border: 1px solid var(--border);
+            border-radius: 8px; padding: 4px 9px; font-size: 0.85rem; font-weight: 600;
+        }
+        .awards { display: flex; flex-direction: column; gap: 6px; justify-content: center; }
+        .award-line { font-size: 0.82rem; }
+        .award-line .holder { font-weight: 700; }
+
+        /* ---- Player cards grid ---- */
+        .players-column {
+            display: grid;
+            grid-template-columns: 1fr;
+            grid-auto-rows: min-content;
+            gap: 12px;
+            flex: 1 1 300px;
+            min-width: 260px;
+            max-width: 340px;
+        }
+        .players-left { order: 1; }
+        .board-column { order: 2; }
+        .players-right { order: 3; }
+        .player-card {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-left-width: 6px;
+            border-radius: 12px;
+            padding: 12px 14px;
+            display: none;
+        }
+        .player-card.current-player {
+            box-shadow: 0 0 0 2px gold, 0 4px 14px rgba(0,0,0,0.35);
+        }
+        .pc-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+        .pc-name { display: flex; align-items: center; gap: 8px; font-size: 1.05rem; font-weight: 700; }
+        .pc-swatch { width: 14px; height: 14px; border-radius: 4px; border: 1px solid rgba(0,0,0,0.35); }
+        .pc-turn-tag { font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.05em;
+                       background: gold; color: #3a2f00; padding: 2px 6px; border-radius: 6px; font-weight: 800; }
+        .vp-badge {
+            display: flex; flex-direction: column; align-items: center;
+            background: var(--panel-2); border: 1px solid var(--border);
+            border-radius: 10px; padding: 3px 12px; line-height: 1.05;
+        }
+        .vp-badge .vp-num { font-size: 1.35rem; font-weight: 800; }
+        .vp-badge .vp-lbl { font-size: 0.6rem; text-transform: uppercase; color: var(--text-dim); letter-spacing: 0.05em; }
+
+        .pc-section-label { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.05em;
+                            color: var(--text-dim); margin: 9px 0 4px; }
+        .pc-resources, .pc-devs { display: flex; flex-wrap: wrap; gap: 6px; }
+        .res-pill, .dev-pill {
+            display: flex; align-items: center; gap: 5px;
+            background: var(--panel-2); border: 1px solid var(--border);
+            border-radius: 7px; padding: 3px 8px; font-size: 0.82rem; font-weight: 600;
+        }
+        .res-pill .dot { width: 12px; height: 12px; border-radius: 3px; border: 1px solid rgba(0,0,0,0.3); }
+        .res-pill.zero, .dev-pill.zero { opacity: 0.4; }
+        .dev-pill .new-flag { color: #7CFC00; font-weight: 800; }
+
+        .pc-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 8px; }
+        .stat {
+            background: var(--panel-2); border: 1px solid var(--border);
+            border-radius: 8px; padding: 6px; text-align: center;
+        }
+        .stat .num { font-size: 1.05rem; font-weight: 700; }
+        .stat .sub { font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-dim); }
+
+        .pc-badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+        .badge {
+            font-size: 0.68rem; font-weight: 700; padding: 3px 8px; border-radius: 999px;
+            border: 1px solid var(--border);
+        }
+        .badge.lr { background: #14532d; color: #bbf7d0; border-color: #22c55e; }
+        .badge.la { background: #7c2d12; color: #fed7aa; border-color: #f97316; }
+        .badge.port { background: var(--panel-2); color: var(--text); }
+        .badge.discard { background: #7f1d1d; color: #fecaca; border-color: #ef4444; }
+        .badge.win { background: #b8860b; color: #fff; border-color: #ffd700; }
+        .badge.muted { color: var(--text-dim); }
+
+        @media (max-width: 900px) {
+            /* When the side columns wrap, show the board first, then players */
+            .board-column { order: 1; }
+            .players-left { order: 2; }
+            .players-right { order: 3; }
+        }
+        @media (max-width: 640px) {
+            .players-column { max-width: 100%; }
+        }
     </style>
 </head>
-<body class="bg-gray-100">
+<body>
     <div class="catan-container">
-        <h1 class="text-4xl font-bold text-gray-800 my-6 tracking-tight">Settlers of Catan</h1>
-        
-        <div id="dice-roll-display" style="display:none;">Waiting for roll...</div>
-
-        <div class="controls mt-4 mb-6"> <button id="refresh-button" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-lg shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50">
-                Refresh State
-            </button>
-        </div>
-        <div id="catan-board-svg-container">
-            <svg id="catan-board-svg" xmlns="http://www.w3.org/2000/svg"></svg>
+        <div class="status-bar">
+            <div class="status-title">Settlers of Catan</div>
+            <div class="status-chips" id="status-chips"></div>
+            <button id="refresh-button">Refresh</button>
         </div>
 
-        <div id="player-info-0" class="player-info top-left" style="display:none;"></div>
-        <div id="player-info-1" class="player-info top-right" style="display:none;"></div>
-        <div id="player-info-2" class="player-info bottom-left" style="display:none;"></div>
-        <div id="player-info-3" class="player-info bottom-right" style="display:none;"></div>
+        <div class="main-layout">
+            <div class="players-column players-left">
+                <div id="player-info-3" class="player-card"></div>
+                <div id="player-info-2" class="player-card"></div>
+            </div>
+
+            <div class="board-column">
+                <div id="catan-board-svg-container">
+                    <svg id="catan-board-svg" xmlns="http://www.w3.org/2000/svg"></svg>
+                </div>
+                <div class="info-strip">
+                    <div class="info-block" style="flex: 2 1 260px;">
+                        <div class="label">Bank Supply</div>
+                        <div class="bank-resources" id="bank-resources"></div>
+                    </div>
+                    <div class="info-block" style="flex: 1 1 160px;">
+                        <div class="label">Awards & Decks</div>
+                        <div class="awards" id="awards"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="players-column players-right">
+                <div id="player-info-0" class="player-card"></div>
+                <div id="player-info-1" class="player-card"></div>
+            </div>
+        </div>
     </div>
 
     <script>
         // --- Constants for Board Rendering ---
-        const HEX_SIZE = 50; //
-        const HEX_RADIUS = HEX_SIZE / Math.cos(Math.PI / 6); //
-        const HEX_WIDTH = 2 * HEX_SIZE; //
-        const HEX_HEIGHT = HEX_RADIUS * 2; //
+        const HEX_SIZE = 50;
+        const HEX_RADIUS = HEX_SIZE / Math.cos(Math.PI / 6);
+        const HEX_WIDTH = 2 * HEX_SIZE;
+        const HEX_HEIGHT = HEX_RADIUS * 2;
 
-        const SETTLEMENT_RADIUS = HEX_SIZE * 0.18; //
-        const CITY_RADIUS = HEX_SIZE * 0.16; //
-        const ROAD_WIDTH = HEX_SIZE * 0.12; //
-        const ROBBER_RADIUS = HEX_SIZE * 0.28; //
-        const NUMBER_FONT_SIZE = HEX_SIZE * 0.35; //
-        const NUMBER_CIRCLE_RADIUS = HEX_SIZE * 0.28; //
-        const PORT_RADIUS = HEX_SIZE * 0.28; //
-        const PORT_FONT_SIZE  = HEX_SIZE * 0.25; //
+        const SETTLEMENT_RADIUS = HEX_SIZE * 0.18;
+        const CITY_RADIUS = HEX_SIZE * 0.16;
+        const ROAD_WIDTH = HEX_SIZE * 0.12;
+        const ROBBER_RADIUS = HEX_SIZE * 0.28;
+        const NUMBER_FONT_SIZE = HEX_SIZE * 0.35;
+        const NUMBER_CIRCLE_RADIUS = HEX_SIZE * 0.28;
+        const PORT_RADIUS = HEX_SIZE * 0.28;
+        const PORT_FONT_SIZE  = HEX_SIZE * 0.25;
 
-        const HEX_COLORS = { //
+        const HEX_COLORS = {
             'wood': '#006400', 'brick': '#B22222', 'sheep': '#90EE90',
             'wheat': '#FFD700', 'ore': '#708090', 'desert': '#F0E68C',
-            'water': '#a7d7f9'
+            'water': '#a7d7f9', 'generic': '#d1d5db'
         };
-        const PLAYER_COLORS = { //
-            'red': '#E53E3E', 'blue': '#3B82F6', 
-            'orange': '#F59E0B', 'white': '#E5E7EB', // Consider a dark stroke for white if on light bg
-            'default': '#A0AEC0' // Fallback color
+        const PLAYER_COLORS = {
+            'red': '#E53E3E', 'blue': '#3B82F6',
+            'orange': '#F59E0B', 'white': '#E5E7EB',
+            'default': '#A0AEC0'
         };
-        const RESOURCE_NAMES_ORDERED = ['wood', 'brick', 'sheep', 'wheat', 'ore']; // for canonical resource list
+        const RESOURCE_NAMES_ORDERED = ['wood', 'brick', 'sheep', 'wheat', 'ore'];
+        const RESOURCE_ABBR = { wood: 'Wo', brick: 'Br', sheep: 'Sh', wheat: 'Wh', ore: 'Or' };
+        const DEV_LABELS = {
+            knight: 'Knight', year_of_plenty: 'Year of Plenty',
+            monopoly: 'Monopoly', road_building: 'Road Build', victory_point: 'Victory Pt'
+        };
+        const DEV_ABBR = {
+            knight: 'Knight', year_of_plenty: 'YoP',
+            monopoly: 'Mono', road_building: 'RoadB', victory_point: 'VP'
+        };
+        const DEV_ORDER = ['knight', 'year_of_plenty', 'monopoly', 'road_building', 'victory_point'];
 
-        const svgNS = "http://www.w3.org/2000/svg"; //
-        const boardSvg = document.getElementById('catan-board-svg'); //
+        const svgNS = "http://www.w3.org/2000/svg";
+        const boardSvg = document.getElementById('catan-board-svg');
 
-        const hexGridCenters = (() => { //
-            const centers = []; 
+        const hexGridCenters = (() => {
+            const centers = [];
             let id = 0;
             const gridRows = [
                 { count: 3, xOffsetRatio: 1.0 }, { count: 4, xOffsetRatio: 0.5 },
                 { count: 5, xOffsetRatio: 0.0 }, { count: 4, xOffsetRatio: 0.5 },
                 { count: 3, xOffsetRatio: 1.0 }
             ];
-            let currentY = HEX_HEIGHT * 3/2; 
+            let currentY = HEX_HEIGHT * 3/2;
             gridRows.forEach(rowInfo => {
-                let currentX = rowInfo.xOffsetRatio * HEX_WIDTH; 
+                let currentX = rowInfo.xOffsetRatio * HEX_WIDTH;
                 for (let i = 0; i < rowInfo.count; i++) {
                     centers.push({ id: id++, x: currentX, y: currentY });
-                    currentX += HEX_WIDTH; 
+                    currentX += HEX_WIDTH;
                 }
-                currentY += HEX_RADIUS * 1.5; 
+                currentY += HEX_RADIUS * 1.5;
             });
             let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
             centers.forEach(c => {
                 minX = Math.min(minX, c.x - HEX_WIDTH / 2); maxX = Math.max(maxX, c.x + HEX_WIDTH / 2);
                 minY = Math.min(minY, c.y - HEX_HEIGHT / 2); maxY = Math.max(maxY, c.y + HEX_HEIGHT / 2);
             });
-            const padding = HEX_SIZE * 0.5; 
+            const padding = HEX_SIZE * 0.5;
             const viewWidth = (maxX - minX) + 2 * padding;
             const viewHeight = (maxY - minY) + 2 * padding;
             const adjustedCenters = centers.map(c => ({
@@ -203,10 +309,10 @@
             return adjustedCenters;
         })();
 
-        function getHexPoints(centerX, centerY, radius) { //
+        function getHexPoints(centerX, centerY, radius) {
             const points = [];
             for (let i = 0; i < 6; i++) {
-                const angle_rad = Math.PI / 3 * i + Math.PI / 6; 
+                const angle_rad = Math.PI / 3 * i + Math.PI / 6;
                 points.push(
                     `${(centerX + radius * Math.cos(angle_rad)).toFixed(2)},${(centerY + radius * Math.sin(angle_rad)).toFixed(2)}`
                 );
@@ -214,23 +320,22 @@
             return points.join(' ');
         }
 
-        function getHexVertexCoords(hexCenterData, vertexIndex, radius) { //
-            const angle_rad = Math.PI / 3 * vertexIndex + Math.PI / 6; 
+        function getHexVertexCoords(hexCenterData, vertexIndex, radius) {
+            const angle_rad = Math.PI / 3 * vertexIndex + Math.PI / 6;
             return {
                 x: hexCenterData.x + radius * Math.cos(angle_rad),
                 y: hexCenterData.y + radius * Math.sin(angle_rad)
             };
         }
 
-        function getHexEdgeCoords(hexCenterData, edgeIndex, radius) { //
+        function getHexEdgeCoords(hexCenterData, edgeIndex, radius) {
             const v1 = getHexVertexCoords(hexCenterData, edgeIndex, radius);
-            const v2 = getHexVertexCoords(hexCenterData, (edgeIndex + 1) % 6, radius); 
+            const v2 = getHexVertexCoords(hexCenterData, (edgeIndex + 1) % 6, radius);
             return { x1: v1.x, y1: v1.y, x2: v2.x, y2: v2.y };
         }
 
-        // --- Drawing Functions (drawHex, drawSettlement, drawRoad, drawPort are from your existing script) ---
-        // (Assuming they are defined here as in your provided catan_board.html file)
-        function drawHex(hexDataFull) { // (adapted slightly for clarity)
+        // --- Drawing Functions ---
+        function drawHex(hexDataFull) {
             const hexSpec = hexGridCenters.find(hc => hc.id === hexDataFull.id);
             if (!hexSpec) return;
             const { x: centerX, y: centerY } = hexSpec;
@@ -238,7 +343,7 @@
             const polygon = document.createElementNS(svgNS, 'polygon');
             polygon.setAttribute('points', getHexPoints(centerX, centerY, HEX_RADIUS));
             polygon.setAttribute('fill', HEX_COLORS[hexDataFull.resource] || 'gray');
-            polygon.setAttribute('stroke', '#4A5568'); 
+            polygon.setAttribute('stroke', '#4A5568');
             polygon.setAttribute('stroke-width', '1.5');
             group.appendChild(polygon);
 
@@ -272,7 +377,7 @@
             boardSvg.appendChild(group);
         }
 
-        function drawSettlement(settlementData) { // (adapted slightly for clarity)
+        function drawSettlement(settlementData) {
             const hexLoc = settlementData.location;
             const hexCenterData = hexGridCenters.find(hc => hc.id === hexLoc.hexId);
             if (!hexCenterData) return;
@@ -286,17 +391,17 @@
                 city.setAttribute('width', citySize.toFixed(2));
                 city.setAttribute('height', citySize.toFixed(2));
                 city.setAttribute('fill', playerColor);
-                city.setAttribute('stroke', '#1A202C'); 
+                city.setAttribute('stroke', '#1A202C');
                 city.setAttribute('stroke-width', '2');
                 boardSvg.appendChild(city);
             } else {
                 const sRadius = SETTLEMENT_RADIUS;
                 const house = document.createElementNS(svgNS, 'polygon');
                 const points = [
-                    `${(vertexCoords.x - sRadius).toFixed(2)},${(vertexCoords.y + sRadius).toFixed(2)}`, 
+                    `${(vertexCoords.x - sRadius).toFixed(2)},${(vertexCoords.y + sRadius).toFixed(2)}`,
                     `${(vertexCoords.x + sRadius).toFixed(2)},${(vertexCoords.y + sRadius).toFixed(2)}`,
                     `${(vertexCoords.x + sRadius).toFixed(2)},${(vertexCoords.y - sRadius * 0.4).toFixed(2)}`,
-                    `${(vertexCoords.x).toFixed(2)},${(vertexCoords.y - sRadius * 1.6).toFixed(2)}`,      
+                    `${(vertexCoords.x).toFixed(2)},${(vertexCoords.y - sRadius * 1.6).toFixed(2)}`,
                     `${(vertexCoords.x - sRadius).toFixed(2)},${(vertexCoords.y - sRadius * 0.4).toFixed(2)}`
                 ].join(' ');
                 house.setAttribute('points', points);
@@ -307,7 +412,7 @@
             }
         }
 
-        function drawRoad(roadData) { // (adapted slightly for clarity)
+        function drawRoad(roadData) {
             const hexLoc = roadData.location;
             const hexCenterData = hexGridCenters.find(hc => hc.id === hexLoc.hexId);
             if (!hexCenterData) return;
@@ -323,8 +428,8 @@
             roadLine.setAttribute('stroke-linecap', 'round');
             boardSvg.appendChild(roadLine);
         }
-        
-        function drawPort(portData) { // (adapted slightly for clarity)
+
+        function drawPort(portData) {
             const hexC = hexGridCenters.find(h => h.id === portData.location.hexId);
             if(!hexC) return;
             const edge = getHexEdgeCoords(hexC, portData.location.edge, HEX_RADIUS);
@@ -334,7 +439,7 @@
             const c = document.createElementNS(svgNS,'circle');
             c.setAttribute('cx', x.toFixed(2)); c.setAttribute('cy', y.toFixed(2));
             c.setAttribute('r',  PORT_RADIUS.toFixed(2));
-            c.setAttribute('fill','rgba(255, 255, 255, 0.8)'); 
+            c.setAttribute('fill','rgba(255, 255, 255, 0.85)');
             c.setAttribute('stroke','#1A202C'); c.setAttribute('stroke-width','1.5');
             grp.appendChild(c);
             const txt = document.createElementNS(svgNS,'text');
@@ -346,153 +451,211 @@
             boardSvg.appendChild(grp);
         }
 
-        // --- New Rendering Functions for Player Info and Dice ---
-        function renderPlayerInfo(playerData, containerElement) {
-            containerElement.innerHTML = ''; // Clear previous content
-            const playerColor = PLAYER_COLORS[playerData.player_id] || PLAYER_COLORS['default'];
-            containerElement.style.borderColor = playerColor;
-            
-            playerData.is_current_player 
-                ? containerElement.classList.add('current-player') 
-                : containerElement.classList.remove('current-player');
+        // --- Helpers ---
+        function cap(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : s; }
 
-            const title = document.createElement('h3');
-            title.textContent = `Player: ${playerData.player_id.charAt(0).toUpperCase() + playerData.player_id.slice(1)}`;
-            title.style.color = playerColor;
-            containerElement.appendChild(title);
+        function el(tag, className, html) {
+            const e = document.createElement(tag);
+            if (className) e.className = className;
+            if (html !== undefined) e.innerHTML = html;
+            return e;
+        }
 
-            const resSectionTitle = document.createElement('p');
-            resSectionTitle.className = 'section-title';
-            resSectionTitle.textContent = 'Resources:';
-            containerElement.appendChild(resSectionTitle);
+        // --- Player card rendering ---
+        function renderPlayerInfo(p, container) {
+            container.innerHTML = '';
+            const color = PLAYER_COLORS[p.player_id] || PLAYER_COLORS['default'];
+            container.style.borderLeftColor = color;
+            p.is_current_player ? container.classList.add('current-player')
+                                : container.classList.remove('current-player');
 
-            const resourcesDiv = document.createElement('div');
-            resourcesDiv.className = 'resources';
-            RESOURCE_NAMES_ORDERED.forEach(resourceKey => {
-                const count = playerData.resources[resourceKey] || 0;
-                const resourceItem = document.createElement('div');
-                resourceItem.className = 'resource-item';
-                resourceItem.innerHTML = `
-                    <span class="resource-icon" style="background-color:${HEX_COLORS[resourceKey]};"></span>
-                    ${resourceKey.charAt(0).toUpperCase() + resourceKey.slice(1)}: ${count}
-                `;
-                resourcesDiv.appendChild(resourceItem);
+            // Header: name + turn tag + VP badge
+            const header = el('div', 'pc-header');
+            const nameWrap = el('div', 'pc-name');
+            nameWrap.innerHTML = `<span class="pc-swatch" style="background:${color}"></span>${cap(p.player_id)}`;
+            if (p.is_current_player) nameWrap.appendChild(el('span', 'pc-turn-tag', 'Turn'));
+            header.appendChild(nameWrap);
+
+            const vp = el('div', 'vp-badge');
+            vp.innerHTML = `<span class="vp-num">${p.victory_points}</span><span class="vp-lbl">VP</span>`;
+            header.appendChild(vp);
+            container.appendChild(header);
+
+            // Resources
+            container.appendChild(el('div', 'pc-section-label',
+                `Resources <span style="color:var(--text)">(${p.resource_total})</span>`));
+            const resWrap = el('div', 'pc-resources');
+            RESOURCE_NAMES_ORDERED.forEach(r => {
+                const count = (p.resources && p.resources[r]) || 0;
+                const pill = el('div', 'res-pill' + (count === 0 ? ' zero' : ''));
+                pill.innerHTML = `<span class="dot" style="background:${HEX_COLORS[r]}"></span>${RESOURCE_ABBR[r]} ${count}`;
+                resWrap.appendChild(pill);
             });
-            containerElement.appendChild(resourcesDiv);
+            container.appendChild(resWrap);
 
-            const devSectionTitle = document.createElement('p');
-            devSectionTitle.className = 'section-title';
-            devSectionTitle.textContent = 'Development Cards:';
-            containerElement.appendChild(devSectionTitle);
-            
-            const devCardsP = document.createElement('p');
-            devCardsP.textContent = `${playerData.dev_card_count}`;
-            const devCardsContainer = document.createElement('div');
-            devCardsContainer.className = 'dev-cards';
-            devCardsContainer.appendChild(devCardsP);
-            containerElement.appendChild(devCardsContainer);
-            
-            containerElement.style.display = 'block';
-        }
+            // Dev cards
+            container.appendChild(el('div', 'pc-section-label',
+                `Dev Cards <span style="color:var(--text)">(${p.dev_card_count})</span>`));
+            const devWrap = el('div', 'pc-devs');
+            DEV_ORDER.forEach(d => {
+                const held = (p.dev_cards && p.dev_cards[d]) || 0;
+                const fresh = (p.new_dev_cards && p.new_dev_cards[d]) || 0;
+                const total = held + fresh;
+                const pill = el('div', 'dev-pill' + (total === 0 ? ' zero' : ''));
+                pill.title = DEV_LABELS[d] + (fresh ? ` (${fresh} bought this turn)` : '');
+                pill.innerHTML = `${DEV_ABBR[d]} ${total}` + (fresh ? ` <span class="new-flag">+${fresh}</span>` : '');
+                devWrap.appendChild(pill);
+            });
+            container.appendChild(devWrap);
 
-        function renderDiceRoll(rollData) {
-            const display = document.getElementById('dice-roll-display');
-            if (!display) return;
+            // Stat grid: settlements / cities / roads (remaining out of limit)
+            const stats = el('div', 'pc-stats');
+            stats.appendChild(el('div', 'stat',
+                `<div class="num">${p.settlements_built}/5</div><div class="sub">Settlements</div>`));
+            stats.appendChild(el('div', 'stat',
+                `<div class="num">${p.cities_built}/4</div><div class="sub">Cities</div>`));
+            stats.appendChild(el('div', 'stat',
+                `<div class="num">${p.roads_built}/15</div><div class="sub">Roads</div>`));
+            stats.appendChild(el('div', 'stat',
+                `<div class="num">${p.knights_played}</div><div class="sub">Knights</div>`));
+            stats.appendChild(el('div', 'stat',
+                `<div class="num">${p.longest_road_length}</div><div class="sub">Road Len</div>`));
+            stats.appendChild(el('div', 'stat',
+                `<div class="num">${p.settlements_remaining + p.cities_remaining + p.roads_remaining}</div><div class="sub">Pieces Left</div>`));
+            container.appendChild(stats);
 
-            if (rollData && rollData.length === 2) {
-                const sum = rollData[0] + rollData[1];
-                display.textContent = `Roll: ${rollData[0]} + ${rollData[1]} = ${sum}`;
-                display.style.display = 'block';
+            // Badges: awards, ports, discards, winner
+            const badges = el('div', 'pc-badges');
+            if (p.is_winner) badges.appendChild(el('span', 'badge win', '👑 Winner'));
+            if (p.has_longest_road) badges.appendChild(el('span', 'badge lr', `Longest Road (${p.longest_road_length})`));
+            if (p.has_largest_army) badges.appendChild(el('span', 'badge la', `Largest Army (${p.knights_played})`));
+            if (p.discards_required > 0) badges.appendChild(el('span', 'badge discard', `Discard ${p.discards_required}`));
+            if (p.ports && p.ports.length) {
+                p.ports.forEach(port => {
+                    const lbl = port.ratio === 3 ? '3:1' : `2:1 ${cap(port.type)}`;
+                    badges.appendChild(el('span', 'badge port', `⚓ ${lbl}`));
+                });
             } else {
-                display.textContent = 'Waiting for roll...';
-                display.style.display = 'block'; // Keep visible or hide if preferred: 'none';
+                badges.appendChild(el('span', 'badge port muted', 'No ports'));
+            }
+            container.appendChild(badges);
+
+            container.style.display = 'block';
+        }
+
+        // --- Status bar (phase / turn / dice / winner) ---
+        function renderStatusBar(info, roll) {
+            const chips = document.getElementById('status-chips');
+            chips.innerHTML = '';
+            if (!info) return;
+
+            if (info.winner) {
+                chips.appendChild(el('span', 'chip winner', `👑 ${cap(info.winner)} wins!`));
+            }
+            chips.appendChild(el('span', 'chip phase', `Phase: <b>${info.phase}</b>`));
+            chips.appendChild(el('span', 'chip', `Turn <b>${info.turn_index}</b>`));
+            if (info.current_player) {
+                chips.appendChild(el('span', 'chip', `Active: <b>${cap(info.current_player)}</b>`));
+            }
+            if (info.in_setup) chips.appendChild(el('span', 'chip', 'Setup'));
+
+            if (roll && roll.length === 2) {
+                chips.appendChild(el('span', 'chip dice', `🎲 ${roll[0]} + ${roll[1]} = ${roll[0] + roll[1]}`));
             }
         }
 
-        // --- Main Rendering Function --- (Updated from renderBoard)
-        function renderGameDisplay(fullGameState) {
-            while (boardSvg.firstChild) { //
-                boardSvg.removeChild(boardSvg.firstChild);
-            }
+        // --- Bank + awards strip ---
+        function renderInfoStrip(info) {
+            const bank = document.getElementById('bank-resources');
+            const awards = document.getElementById('awards');
+            bank.innerHTML = '';
+            awards.innerHTML = '';
+            if (!info) return;
 
-            // Check for valid game state and board_state structure
-            if (!fullGameState || !fullGameState.hexes) { // Expecting ExtendedBoardState directly now
-                console.error("Invalid game state provided to renderGameDisplay.", fullGameState);
+            RESOURCE_NAMES_ORDERED.forEach(r => {
+                const count = (info.bank && info.bank[r] !== undefined) ? info.bank[r] : '-';
+                const item = el('div', 'bank-res');
+                item.innerHTML = `<span class="res-pill dot" style="width:12px;height:12px;border-radius:3px;background:${HEX_COLORS[r]}"></span>${cap(r)}: ${count}`;
+                bank.appendChild(item);
+            });
+            const devItem = el('div', 'bank-res');
+            devItem.innerHTML = `🃏 Dev deck: ${info.dev_cards_remaining}`;
+            bank.appendChild(devItem);
+
+            const lr = info.longest_road_owner
+                ? `<span class="holder" style="color:${PLAYER_COLORS[info.longest_road_owner]}">${cap(info.longest_road_owner)}</span> (${info.longest_road_length})`
+                : '<span class="holder" style="color:var(--text-dim)">unclaimed</span>';
+            const la = info.largest_army_owner
+                ? `<span class="holder" style="color:${PLAYER_COLORS[info.largest_army_owner]}">${cap(info.largest_army_owner)}</span> (${info.largest_army_size})`
+                : '<span class="holder" style="color:var(--text-dim)">unclaimed</span>';
+            awards.appendChild(el('div', 'award-line', `🛣️ Longest Road: ${lr}`));
+            awards.appendChild(el('div', 'award-line', `⚔️ Largest Army: ${la}`));
+            awards.appendChild(el('div', 'award-line', `🏁 To win: ${info.vp_to_win} VP`));
+        }
+
+        // --- Main Rendering ---
+        function renderGameDisplay(fullGameState) {
+            while (boardSvg.firstChild) boardSvg.removeChild(boardSvg.firstChild);
+
+            if (!fullGameState || !fullGameState.hexes) {
+                console.error("Invalid game state.", fullGameState);
                 const errorText = document.createElementNS(svgNS, 'text');
                 errorText.setAttribute('x', '50%'); errorText.setAttribute('y', '50%');
                 errorText.setAttribute('text-anchor', 'middle'); errorText.setAttribute('fill', 'red');
                 errorText.setAttribute('font-size', `${HEX_SIZE * 0.4}px`);
                 errorText.textContent = "Error: Board data unavailable.";
                 boardSvg.appendChild(errorText);
-                // Hide player info and dice if main board fails
-                document.querySelectorAll('.player-info').forEach(el => el.style.display = 'none');
-                const diceEl = document.getElementById('dice-roll-display');
-                if (diceEl) diceEl.style.display = 'none';
+                document.querySelectorAll('.player-card').forEach(el => el.style.display = 'none');
+                renderStatusBar(null, null);
+                renderInfoStrip(null);
                 return;
             }
 
-            // Draw board elements (hexes, roads, settlements, ports)
             fullGameState.hexes.forEach(hexData => drawHex(hexData));
-            if (fullGameState.roads) {
-                fullGameState.roads.forEach(roadData => drawRoad(roadData));
-            }
-            if (fullGameState.settlements) {
-                fullGameState.settlements.forEach(settlementData => drawSettlement(settlementData));
-            }
-            if (fullGameState.ports) {
-                fullGameState.ports.forEach(portData => drawPort(portData));
-            }
+            (fullGameState.roads || []).forEach(drawRoad);
+            (fullGameState.settlements || []).forEach(drawSettlement);
+            (fullGameState.ports || []).forEach(drawPort);
 
-            // Render Player Information
-            const playerInfoElements = [ // Match IDs from HTML
+            const playerInfoElements = [
                 document.getElementById('player-info-0'), document.getElementById('player-info-1'),
                 document.getElementById('player-info-2'), document.getElementById('player-info-3')
             ];
-            playerInfoElements.forEach(el => { if (el) el.style.display = 'none'; }); // Hide all first
+            playerInfoElements.forEach(el => { if (el) el.style.display = 'none'; });
 
-            if (fullGameState.players_data) {
-                fullGameState.players_data.forEach((player, index) => {
-                    if (index < playerInfoElements.length && playerInfoElements[index]) {
-                        renderPlayerInfo(player, playerInfoElements[index]);
-                    }
-                });
-            }
-            
-            // Render Dice Roll
-            renderDiceRoll(fullGameState.last_dice_roll);
+            (fullGameState.players_data || []).forEach((player, index) => {
+                if (index < playerInfoElements.length && playerInfoElements[index]) {
+                    renderPlayerInfo(player, playerInfoElements[index]);
+                }
+            });
+
+            renderStatusBar(fullGameState.game_info, fullGameState.last_dice_roll);
+            renderInfoStrip(fullGameState.game_info);
         }
 
-        // --- Live Update via Fetch API --- (Fetch /state and render)
-        async function fetchAndUpdateState() { // Renamed for clarity
+        // --- Live Update ---
+        async function fetchAndUpdateState() {
             const button = document.getElementById('refresh-button');
-            button.disabled = true; 
+            button.disabled = true;
             button.textContent = 'Refreshing...';
             try {
-                const response = await fetch('/state'); // Fetches the ExtendedBoardState
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
+                const response = await fetch('/state');
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
                 const newGameState = await response.json();
-                renderGameDisplay(newGameState); // Call the updated render function
+                renderGameDisplay(newGameState);
             } catch (error) {
                 console.error('Error fetching or parsing game state:', error);
-                renderGameDisplay(null); // Trigger error display on board
+                renderGameDisplay(null);
             } finally {
-                button.disabled = false; 
-                button.textContent = 'Refresh State';
+                button.disabled = false;
+                button.textContent = 'Refresh';
             }
         }
 
-        // --- Initial Render & Event Listener Setup ---
-        document.addEventListener('DOMContentLoaded', () => { //
-            fetchAndUpdateState(); // Initial fetch
-
+        document.addEventListener('DOMContentLoaded', () => {
+            fetchAndUpdateState();
             const refreshButton = document.getElementById('refresh-button');
-            if (refreshButton) { //
-                refreshButton.addEventListener('click', fetchAndUpdateState);
-            }
-
-            setInterval(fetchAndUpdateState, 500); // Poll every 2 seconds (adjusted interval)
+            if (refreshButton) refreshButton.addEventListener('click', fetchAndUpdateState);
+            setInterval(fetchAndUpdateState, 500);
         });
     </script>
 </body>
