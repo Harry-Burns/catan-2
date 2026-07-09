@@ -48,3 +48,23 @@ class RandomPlayerWithRules(Player):
 
         _playable_moves = [a for i,a in enumerate(playable_moves) if move_actions[i] == selected_action]
         return _playable_moves[np.random.randint(len(_playable_moves))]
+    
+import random
+from catan.actions import TABLE_TRADE_ACCEPT, TABLE_TRADE_PROPOSE, TABLE_TRADE_REJECT, TABLE_TRADE_SELECT
+
+class RandomDistributedNoTrades(Player):
+    def set_constants(self):
+        self.action_mask = {TABLE_TRADE_ACCEPT, TABLE_TRADE_PROPOSE, TABLE_TRADE_REJECT, TABLE_TRADE_SELECT}
+
+    def decide(self, gs: GameState, playable_moves: np.ndarray):
+        # unpack once, keep pairs
+        unpacked = [(a, unpack_action(a)[0]) for a in playable_moves]
+        masked = [(a, action) for a, action in unpacked if action not in self.action_mask]
+
+        if not masked:
+            masked = unpacked
+
+        # set instead of np.unique, random instead of np.random
+        selected_action = random.choice(list({action for _, action in masked}))
+        candidates = [a for a, action in masked if action == selected_action]
+        return random.choice(candidates)

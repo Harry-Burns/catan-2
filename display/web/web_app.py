@@ -20,7 +20,7 @@ app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 @app.get("/board", response_class=HTMLResponse)
 async def display_board():
     try:
-        return FileResponse("web/catan_board.html")
+        return FileResponse("display/web/catan_board.html")
     except RuntimeError as e:
         print(f"Error serving HTML file: {e}")
         raise HTTPException(status_code=500, detail="HTML file not found or error reading it.")

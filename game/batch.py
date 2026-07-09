@@ -39,6 +39,32 @@ def _worker(args: Tuple[int, List[str], int, int]) -> Tuple[Dict[str, Any],GameS
     result, _ = pure_runner(seed, cls_paths, max_steps, offset, return_gs=False)
     return result, None
 
+
+def _multi_worker(args: Tuple[List[int], List[str], int, List[int]]) -> List[Dict[str, Any]]:
+    from game.engine import Engine
+    from catan.engine import playable_moves, apply_action_inplace
+    from catan.ids import NONE_PLAYER
+    from game.runner import _resolve_class
+
+    seeds, cls_paths, max_steps, offsets = args
+    PlayerClasses = [_resolve_class(p) for p in cls_paths]  # resolve once per worker
+
+    results = []
+    for seed, offset in zip(seeds, offsets):
+        eng = Engine(seed=int(seed))
+        gs = eng.gs
+        rotated = PlayerClasses[offset:] + PlayerClasses[:offset]
+        players = [rotated[i](player_id=i) for i in range(len(rotated))]
+        steps = 0
+        while gs.winner == NONE_PLAYER and steps < max_steps:
+            moves = playable_moves(gs)
+            a = players[int(gs.current_player_idx)].decide(gs, moves)
+            apply_action_inplace(gs, a, eng.rng)
+            steps += 1
+        results.append({"steps": steps, "winner": int(gs.winner), "turns": gs.turn_index, "offset": offset})
+    return results
+
+
 def run_batch(settings: BatchRunnerSettings) -> Tuple[BatchSummary, List[Dict[str,Any]]]:
     player_cls_paths = settings.player_cls_paths
     num_games = settings.num_games
@@ -48,16 +74,19 @@ def run_batch(settings: BatchRunnerSettings) -> Tuple[BatchSummary, List[Dict[st
     rng = np.random.default_rng(settings.base_seed)
     seeds = rng.integers(1, 2**31 - 1, size=num_games, dtype=np.int64).tolist()
     offsets = rng.integers(0,4,size=num_games, dtype=np.int64).tolist() if settings.shuffle else [0]*num_games
-    player_cls_paths_shuffled = [(player_cls_paths[offsets[i]:] + player_cls_paths[:offsets[i]]) for i in range(num_games)]
-    
-    args_iter = [(int(seeds[i]), player_cls_paths_shuffled[i], settings.max_steps, offsets[i]) for i in range(num_games)]
 
     chunksize = settings.chunksize
+    chunks = [range(i, min(i + chunksize, num_games)) for i in range(0, num_games, chunksize)]
+    worker_args = [
+        ([int(seeds[i]) for i in chunk], player_cls_paths, settings.max_steps, [int(offsets[i]) for i in chunk])
+        for chunk in chunks
+    ]
+
     with ProcessPoolExecutor(os.cpu_count()) as ex:
-        output = list(ex.map(_worker, args_iter, chunksize=chunksize))
-    
-    results, gamestates = zip(*output)
-    results = list(results); gamestates = list(gamestates)
+        output = list(ex.map(_multi_worker, worker_args))
+
+    results = [r for slab_results in output for r in slab_results]
+    gamestates = []
 
     turn_wins = np.zeros((N_PLAYERS+1), dtype=np.int32) # 0..3 Players, 4 No Winner
     player_wins = np.zeros((N_PLAYERS+1), dtype=np.int32) # 0..3 Players, 4 No Winner

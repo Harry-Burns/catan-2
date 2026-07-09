@@ -500,6 +500,21 @@ def generate_robber_moves(gs: GameState) -> list[int]:
     return actions
 
 # --- Trading
+
+# Preloading
+PLAYER_TRADE_TABLE = {}
+for give_res in range(N_RES):
+    for take_res in range(N_RES):
+        if give_res == take_res:
+            continue
+        for give_amt in (1, 2):
+            give = np.zeros(N_RES, dtype=np.int16)
+            take = np.zeros(N_RES, dtype=np.int16)
+            give[give_res] = give_amt
+            take[take_res] = 1
+            PLAYER_TRADE_TABLE[(give_res, give_amt, take_res)] = act_table_trade_propose(give=give, take=take)
+
+
 def _generate_port_trades(gs: GameState) -> list[int]:
     pid = gs.current_player_idx
     hand = gs.players[pid].hand
@@ -522,30 +537,21 @@ def _generate_port_trades(gs: GameState) -> list[int]:
     return actions
 
 def _generate_player_trades(gs: GameState) -> list[int]:
-    pid = int(gs.current_player_idx)
+    pid = gs.current_player_idx
     hand = gs.players[pid].hand
     bank = gs.board.bank_res
-
     actions: list[int] = []
 
-    # TODO: Better implement trading
-    for res in range(N_RES):
-        for _res in range(N_RES):
-            if res == _res or hand[res] == 0 or bank[_res] == BANK_STOCK: continue
-            if hand[res] >= 1: 
-                give = np.zeros(N_RES, dtype=np.int16)
-                take = np.zeros(N_RES, dtype=np.int16)
-                give[res] = 1
-                take[_res] = 1
+    for give_res in range(N_RES):
+        if hand[give_res] == 0:
+            continue
+        for take_res in range(N_RES):
+            if give_res == take_res or bank[take_res] == BANK_STOCK:
+                continue
+            actions.append(PLAYER_TRADE_TABLE[(give_res, 1, take_res)])
+            if hand[give_res] >= 2:
+                actions.append(PLAYER_TRADE_TABLE[(give_res, 2, take_res)])
 
-                actions.append(act_table_trade_propose(give=give,take=take))
-            if hand[res] >= 2:
-                give = np.zeros(N_RES, dtype=np.int16)
-                take = np.zeros(N_RES, dtype=np.int16)
-                give[res] = 2
-                take[_res] = 1
-
-                actions.append(act_table_trade_propose(give=give,take=take))
     return actions
 
 def generate_playable_trades(gs: GameState) -> list[int]:
