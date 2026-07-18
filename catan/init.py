@@ -25,7 +25,7 @@ def _place_numbers_ring(hex_res: np.ndarray) -> np.ndarray:
     nums = NUMBER_DIST.copy()
     i = 0
     for h in HEX_RING:
-        if hex_res[h] != 5: 
+        if hex_res[h] != DESERT:
             out[h] = nums[i]
             i += 1
     return out
