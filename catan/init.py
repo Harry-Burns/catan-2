@@ -57,7 +57,7 @@ def initialize_game(rng: np.random.Generator) -> GameState:
         road_owner=np.full(n_road, -1, dtype=np.int8),
         settlement_owner=np.full(n_sett, -1, dtype=np.int8),
         settlement_type=np.full(n_sett, EMPTY, dtype=np.uint8),
-        robber_hex=np.uint16(robber_hex),
+        robber_hex=robber_hex,
         dev_deck=dev_deck,
         bank_res=np.full(N_RES, BANK_STOCK, dtype=np.int16),
     )
@@ -65,15 +65,15 @@ def initialize_game(rng: np.random.Generator) -> GameState:
     players = [
         PlayerState(
             hand=np.zeros(N_RES, dtype=np.int8),
-            ports_mask=np.uint8(0),
+            ports_mask=0,
             dev_cards=np.zeros(5, dtype=np.int8),
             new_dev_cards=np.zeros(5, dtype=np.int8),
-            used_knights=np.uint8(0),
-            longest_road_len=np.uint8(0),
-            discards_required=np.uint8(0),
-            roads_built=np.uint8(0),
-            settlements_built=np.uint8(0),
-            cities_built=np.uint8(0),
+            used_knights=0,
+            longest_road_len=0,
+            discards_required=0,
+            roads_built=0,
+            settlements_built=0,
+            cities_built=0,
         )
         for _ in range(N_PLAYERS)
     ]

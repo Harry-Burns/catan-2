@@ -27,7 +27,7 @@ from catan.ids import (
 ### --- Player Helper Functions  ---------------
 ### ---------------------------- ---------------
 def get_total_cards(gs: GameState, pid: int) -> int:
-    return int(gs.players[pid].hand.sum())
+    return sum(gs.players[pid].hand.tolist())
 
 def get_random_card(gs: GameState, rng: np.random.Generator, pid: int):
     hand = gs.players[pid].hand; 
@@ -45,22 +45,16 @@ def get_victory_points(gs: GameState, pid: int) -> int:
 
 def _place_settlement(gs: GameState, pid: np.uint8, sid: int):
     gs.players[pid].settlements_built += 1
-    gs.board.settlement_owner[sid] = np.int8(pid)
-    gs.board.settlement_type[sid] = np.int8(SETTLEMENT)
+    gs.board.settlement_owner[sid] = pid
+    gs.board.settlement_type[sid] = SETTLEMENT
 
-    # Add ports
-    port_sett = gs.topology.port_settlement_ix
-    port_res = gs.topology.port_res_id
-    for _portid, _sids in enumerate(port_sett):
-        if sid in _sids:
-            res = port_res[_portid]
-            bit = 0 if res == -1 else (res + 1)
-            gs.players[pid].ports_mask = np.uint8(int(gs.players[pid].ports_mask) | (1 << bit))
-            break
+    bit = gs.topology.py_port_bit.get(sid)
+    if bit is not None:
+        gs.players[pid].ports_mask |= 1 << bit
 
 def _place_road(gs: GameState, pid: np.uint8, rid: int):
     gs.players[pid].roads_built += 1
-    gs.board.road_owner[rid] = np.int8(pid)
+    gs.board.road_owner[rid] = pid
 
 ### ------------------------ -------------------
 ### --- Game State Altering   (apply_action) ---
@@ -78,7 +72,7 @@ def handle_7(gs: GameState) -> np.ndarray:
     discarders = [t > 7 for t in totals]
 
     if not(any(discarders)):
-        gs.prompt = np.uint8(MOVE_ROBBER)
+        gs.prompt = MOVE_ROBBER
     else:
         for pid,d in enumerate(discarders):
             if d:
@@ -86,69 +80,62 @@ def handle_7(gs: GameState) -> np.ndarray:
                 gs.players[pid].discards_required = to_discard
 
         gs.current_player_idx = discarders.index(True)
-        gs.prompt = np.uint8(DISCARD)
+        gs.prompt = DISCARD
 
 def distribute_resources(gs: GameState, total: int) -> None:
-    topo  = gs.topology; board = gs.board
+    producers = gs.topology.py_roll_hexes.get(total)
+    if producers is None:
+        return
 
-    player_gains = np.zeros((N_PLAYERS, N_RES), dtype=np.int16)
-    bank_losses  = np.zeros(N_RES, dtype=np.int16)
-
+    board = gs.board
     robber_hex = int(board.robber_hex)
+    owners = board.settlement_owner.tolist()
+    types = board.settlement_type.tolist()
 
-    for hid, num in enumerate(topo.hex_number):
-        if hid == robber_hex or int(num) != total:
+    gains = None  # lazily built: gains[pid][res]
+    for hid, res, sids in producers:
+        if hid == robber_hex:
             continue
-
-        res = int(topo.hex_resource[hid])  # 0..4; 5 = desert
-        if res == DESERT:
-            continue
-
-        # walk the 6 corners around this hex
-        for v in range(6):
-            sid = int(topo.hex_settlement_ix[hid, v])
-            if sid < 0:
-                continue
-
-            owner = int(board.settlement_owner[sid])
+        for sid in sids:
+            owner = owners[sid]
             if owner < 0:
                 continue
+            if gains is None:
+                gains = [[0] * N_RES for _ in range(N_PLAYERS)]
+            gains[owner][res] += 2 if types[sid] == CITY else 1
 
-            stype = int(board.settlement_type[sid])
-            qty = 2 if stype == CITY else (1 if stype == SETTLEMENT else 0)
-            if qty == 0:
-                continue
+    if gains is None:
+        return
 
-            player_gains[owner, res] += int(qty)
-            bank_losses[res] += int(qty)
-
-    bank_hand = gs.board.bank_res
-    for _res in range(N_RES):
-        want = int(bank_losses[_res])
-        have = int(bank_hand[_res])
-        if want <= have:
+    bank = board.bank_res
+    for res in range(N_RES):
+        want = gains[0][res] + gains[1][res] + gains[2][res] + gains[3][res]
+        if want == 0:
             continue
-
-        # Case for when bank doesnt have enough.
-        _player = 0
-        target_gains = player_gains[:,_res].astype(np.int32)
-        temp_gains = np.zeros(N_PLAYERS, dtype=np.int16)
-
-        while int(temp_gains.sum()) < have:
-            if temp_gains[_player] < target_gains[_player]:
-                temp_gains[_player] += 1
-            _player = int((_player + 1) % N_PLAYERS)
-        player_gains[:,_res] = temp_gains
-        bank_losses[_res] = int(temp_gains.sum())
+        have = int(bank[res])
+        if want > have:
+            # Bank short: deal round-robin until it runs dry.
+            target = [gains[p][res] for p in range(N_PLAYERS)]
+            temp = [0] * N_PLAYERS
+            given = 0
+            p = 0
+            while given < have:
+                if temp[p] < target[p]:
+                    temp[p] += 1
+                    given += 1
+                p = (p + 1) % N_PLAYERS
+            for _p in range(N_PLAYERS):
+                gains[_p][res] = temp[_p]
+            want = given
+        bank[res] = have - want
 
     for pid in range(N_PLAYERS):
-        if player_gains[pid].any():
-            gs.players[pid].hand[:] = gs.players[pid].hand + player_gains[pid]
-
-    if bank_losses.any():
-        board.bank_res[:] = board.bank_res - bank_losses
-
-    assert (gs.board.bank_res >= 0).all(), f"Bank negative: {gs.board.bank_res} |"
+        g = gains[pid]
+        if g[0] or g[1] or g[2] or g[3] or g[4]:
+            hand = gs.players[pid].hand
+            for res in range(N_RES):
+                if g[res]:
+                    hand[res] += g[res]
 
 # --- Turn Mechanics
 def pass_turn(gs: GameState):
@@ -159,8 +146,8 @@ def pass_turn(gs: GameState):
     gs.players[pid].dev_cards += gs.players[pid].new_dev_cards
     gs.players[pid].new_dev_cards.fill(0)
 
-    gs.current_player_turn_idx = np.uint8(next_player)
-    gs.current_player_idx = np.uint8(next_player)
+    gs.current_player_turn_idx = next_player
+    gs.current_player_idx = next_player
 
     gs.turn_index += 1
 
@@ -188,7 +175,7 @@ def purchase_city(gs: GameState, cid: int):
 
     gs.players[pid].cities_built += 1
     gs.players[pid].settlements_built -= 1
-    gs.board.settlement_type[cid] = np.int8(CITY)
+    gs.board.settlement_type[cid] = CITY
 
 def purchase_dev_card(gs: GameState):
     pid = gs.current_player_idx
@@ -209,7 +196,7 @@ def play_knight(gs: GameState):
     gs.players[pid].dev_cards[KNIGHT] -= 1
     gs.players[pid].used_knights += 1
     gs.dev_card_used = True
-    gs.prompt = np.uint8(MOVE_ROBBER)
+    gs.prompt = MOVE_ROBBER
 
 def play_monopoly(gs: GameState, res: int):
     pid = int(gs.current_player_idx)
@@ -257,23 +244,23 @@ def setup_response(gs: GameState, sid: int, rid: int):
     pid = int(gs.current_player_idx)
 
     _place_settlement(gs, pid, sid)
-    gs.board.road_owner[rid] = np.int8(pid)
+    gs.board.road_owner[rid] = pid
     gs.players[pid].roads_built += 1
 
     if gs.setup_turn_idx == (N_PLAYERS * 2) - 1:
         gs.in_setup = False
-        gs.current_player_idx = np.uint8(0)
-        gs.current_player_turn_idx = np.uint8(0)
-        gs.prompt = np.uint8(PLAY_PRETURN)
+        gs.current_player_idx = 0
+        gs.current_player_turn_idx = 0
+        gs.prompt = PLAY_PRETURN
     else:
         order = list(range(N_PLAYERS)) + list(range(N_PLAYERS))[::-1]
         gs.setup_turn_idx += 1
         current_player_idx = order[gs.setup_turn_idx]
 
-        gs.current_player_idx = np.uint8(current_player_idx)
-        gs.current_player_turn_idx = np.uint8(current_player_idx)
+        gs.current_player_idx = current_player_idx
+        gs.current_player_turn_idx = current_player_idx
 
-        gs.prompt = np.uint8(SETUP_TURN)
+        gs.prompt = SETUP_TURN
 
 
 # --- Trade Based
@@ -317,28 +304,28 @@ def move_robber(gs: GameState, rng: np.random.Generator, hex_id: int, victim_pid
 
 ## --- Helpers
 def _get_placeable_roads_from(gs: GameState, extra_road: int=-1) -> np.ndarray:
-    spaces: set[int] = set()
-
     pid = int(gs.current_player_idx)
 
-    road_owners = gs.board.road_owner
-    settlement_owners = gs.board.settlement_owner
+    road_owners = gs.board.road_owner.tolist()
+    settlement_owners = gs.board.settlement_owner.tolist()
 
-    r_adj_sett = gs.topology.road_adj_settlement
-    sett_adj_r = gs.topology.settlement_adj_roads
+    topo = gs.topology
+    r_adj_sett = topo.py_road_adj_sett
+    sett_adj_r = topo.py_sett_adj_roads
 
-    my_roads = np.where(road_owners == pid)[0]
+    my_roads = [rid for rid, o in enumerate(road_owners) if o == pid]
     if extra_road >= 0:
-        my_roads = np.concatenate([my_roads, np.array([extra_road], dtype=my_roads.dtype)])
+        my_roads.append(extra_road)
 
+    spaces: set[int] = set()
     for rid in my_roads:
         for sid in r_adj_sett[rid]:
-            if sid >= 0 and (settlement_owners[int(sid)] in (-1, pid)):
-                for _rid in sett_adj_r[int(sid)]:
-                    if _rid >= 0 and road_owners[int(_rid)] == -1 and _rid != extra_road:
-                        spaces.add(int(_rid))
+            if sid >= 0 and settlement_owners[sid] in (-1, pid):
+                for _rid in sett_adj_r[sid]:
+                    if road_owners[_rid] == -1 and _rid != extra_road:
+                        spaces.add(_rid)
 
-    return np.fromiter(spaces, dtype=np.int32) 
+    return np.fromiter(spaces, dtype=np.int32, count=len(spaces))
 
 def _generate_playable_road_builder(gs: GameState) -> np.ndarray:
     pid = int(gs.current_player_idx)
@@ -363,22 +350,18 @@ def _generate_playable_road_builder(gs: GameState) -> np.ndarray:
 def generate_playable_setup_moves(gs: GameState) -> list[int]:
     actions: list[int] = []
 
-    sett_owners = gs.board.settlement_owner
-    adj_settlements = gs.topology.settlement_adj_settlement
-    adj_roads = gs.topology.settlement_adj_roads
+    sett_owners = gs.board.settlement_owner.tolist()
+    topo = gs.topology
+    adj_settlements = topo.py_sett_adj_sett
+    adj_roads = topo.py_sett_adj_roads
 
-    for sid,sOwned in enumerate(sett_owners):
+    for sid, sOwned in enumerate(sett_owners):
         if sOwned != -1:
             continue
-        
-        neigh = adj_settlements[sid]
-        mask = neigh >= 0
-        if mask.any() and (sett_owners[neigh[mask]] != -1).any():
+        if any(sett_owners[n] != -1 for n in adj_settlements[sid]):
             continue
-
         for rid in adj_roads[sid]:
-            if rid >= 0:
-                actions.append(act_setup(int(sid), int(rid)))
+            actions.append(act_setup(sid, rid))
     return actions
 
 ## --- Dev Cards
@@ -413,35 +396,23 @@ def _get_placeable_roads(gs: GameState) -> np.ndarray:
 def _get_placeable_settlements(gs: GameState) -> np.ndarray:
     pid = int(gs.current_player_idx)
 
-    sett_owner = gs.board.settlement_owner            # (N_SETT,)
-    road_owner = gs.board.road_owner                  # (N_ROAD,)
+    sett_owner = gs.board.settlement_owner.tolist()
+    road_owner = gs.board.road_owner.tolist()
 
-    adj_sett  = gs.topology.settlement_adj_settlement # (N_SETT,3)
-    adj_roads = gs.topology.settlement_adj_roads      # (N_SETT,3)
+    topo = gs.topology
+    adj_sett = topo.py_sett_adj_sett
+    adj_roads = topo.py_sett_adj_roads
 
     spaces = []
     for sid, owner in enumerate(sett_owner):
         if owner != -1:
             continue
-
-        # distance rule
-        neigh = adj_sett[sid]
-        ok = True
-        for n in neigh:
-            if n >= 0 and sett_owner[int(n)] != -1:
-                ok = False
-                break
-        if not ok:
-            continue
-
-        # must touch at least one of my roads
-        connected = False
+        if any(sett_owner[n] != -1 for n in adj_sett[sid]):
+            continue          # distance rule
         for r in adj_roads[sid]:
-            if r >= 0 and road_owner[int(r)] == pid:
-                connected = True
+            if road_owner[r] == pid:
+                spaces.append(sid)   # must touch one of my roads
                 break
-        if connected:
-            spaces.append(int(sid))
 
     return np.asarray(spaces, dtype=np.int32)
 
@@ -454,48 +425,45 @@ def _get_placeable_cities(gs: GameState) -> np.ndarray:
 def generate_playable_purchases(gs: GameState) -> list[int]:
     actions: list[int] = []
     pid = gs.current_player_idx
-    hand = gs.players[pid].hand
-    afford =  (hand[None, :] >= COSTS).all(axis=1)
+    player = gs.players[pid]
+    w, b, sh, wh, o = player.hand.tolist()
 
-    if afford[OBJ_ROAD] and gs.players[pid].roads_built < ROADS_ALLOWED:
-        actions.extend(BUILD_ROAD_TABLE[int(rid)] for rid in _get_placeable_roads(gs))
+    if w >= 1 and b >= 1:
+        if player.roads_built < ROADS_ALLOWED:
+            actions.extend(BUILD_ROAD_TABLE[int(rid)] for rid in _get_placeable_roads(gs))
+        if sh >= 1 and wh >= 1 and player.settlements_built < SETTLEMENTS_ALLOWED:
+            actions.extend(BUILD_SETTLEMENT_TABLE[int(sid)] for sid in _get_placeable_settlements(gs))
 
-    if afford[OBJ_SETTLEMENT] and gs.players[pid].settlements_built < SETTLEMENTS_ALLOWED:
-        actions.extend(BUILD_SETTLEMENT_TABLE[int(sid)] for sid in _get_placeable_settlements(gs))
-
-    if afford[OBJ_CITY] and gs.players[pid].cities_built < CITIES_ALLOWED:
+    if wh >= 2 and o >= 3 and player.cities_built < CITIES_ALLOWED:
         actions.extend(BUILD_CITY_TABLE[int(cid)] for cid in _get_placeable_cities(gs))
 
-    if afford[OBJ_DEV] and gs.board.dev_deck.any():
+    if sh >= 1 and wh >= 1 and o >= 1 and gs.board.dev_deck.any():
         actions.append(ACT_PURCHASE_DEV)
 
     return actions
 
 
-
 def generate_robber_moves(gs: GameState) -> list[int]:
     actions: list[int] = []
 
-    pid = gs.current_player_idx
-    curr_hex = gs.board.robber_hex
-    hex_sett = gs.topology.hex_settlement_ix
-    sett_owners = gs.board.settlement_owner
+    pid = int(gs.current_player_idx)
+    curr_hex = int(gs.board.robber_hex)
+    hex_sett = gs.topology.py_hex_settlement
+    sett_owners = gs.board.settlement_owner.tolist()
 
-    for hid,neighbours in enumerate(hex_sett):
+    for hid, neighbours in enumerate(hex_sett):
         if hid == curr_hex:
             continue
-        
+
+        row = SELECT_ROBBER_TABLE[hid]
         victims = set()
         for sid in neighbours:
-            if sid < 0:
-                continue
             owner = sett_owners[sid]
-            if owner in (-1, int(pid)):
-                continue
-            victims.add(owner)
+            if owner != -1 and owner != pid:
+                victims.add(owner)
 
-        actions.extend(SELECT_ROBBER_TABLE[hid][int(_pid)] for _pid in victims)
-        actions.append(SELECT_ROBBER_TABLE[hid][NONE_PLAYER])
+        actions.extend(row[_pid] for _pid in victims)
+        actions.append(row[NONE_PLAYER])
 
     return actions
 
@@ -517,45 +485,49 @@ for give_res in range(N_RES):
 
 def _generate_port_trades(gs: GameState) -> list[int]:
     pid = gs.current_player_idx
-    hand = gs.players[pid].hand
-    ports = gs.players[pid].ports_mask
-    bank = gs.board.bank_res
+    hand = gs.players[pid].hand.tolist()
+    ports = int(gs.players[pid].ports_mask)
+    bank = gs.board.bank_res.tolist()
     actions: list[int] = []
 
     for _res in range(N_RES):
-        rate = 4
-        if(ports >> (_res + 1)) & 1:
+        if (ports >> (_res + 1)) & 1:
             rate = 2
         elif ports & 1:
             rate = 3
+        else:
+            rate = 4
 
         if hand[_res] >= rate:
+            row = PORT_TRADE_TABLE[_res][rate - 2]
             for _res_recieved in range(N_RES):
-                if _res_recieved == _res: continue
-                if bank[_res_recieved] < 1: continue
-                actions.append(PORT_TRADE_TABLE[_res][rate - 2][_res_recieved])
+                if _res_recieved == _res or bank[_res_recieved] < 1:
+                    continue
+                actions.append(row[_res_recieved])
     return actions
 
 def _generate_player_trades(gs: GameState) -> list[int]:
     pid = gs.current_player_idx
-    hand = gs.players[pid].hand
-    bank = gs.board.bank_res
+    hand = gs.players[pid].hand.tolist()
+    bank = gs.board.bank_res.tolist()
     actions: list[int] = []
 
     for give_res in range(N_RES):
-        if hand[give_res] == 0:
+        held = hand[give_res]
+        if held == 0:
             continue
         for take_res in range(N_RES):
             if give_res == take_res or bank[take_res] == BANK_STOCK:
                 continue
             actions.append(PLAYER_TRADE_TABLE[(give_res, 1, take_res)])
-            if hand[give_res] >= 2:
+            if held >= 2:
                 actions.append(PLAYER_TRADE_TABLE[(give_res, 2, take_res)])
 
     return actions
 
 def generate_playable_trades(gs: GameState) -> list[int]:
-    if get_total_cards(gs, int(gs.current_player_idx)) == 0: return []
+    if not gs.players[int(gs.current_player_idx)].hand.any():
+        return []
     return _generate_port_trades(gs) + _generate_player_trades(gs)
 
 def trade_selection(gs: GameState) -> list[int]:
@@ -571,15 +543,13 @@ def trade_selection(gs: GameState) -> list[int]:
     return actions
 
 def trade_decision(gs: GameState) -> list[int]:
-    pid = int(gs.current_player_idx)
-    hand = gs.players[pid].hand
-    take = gs.trade_offer_take
+    hand = gs.players[int(gs.current_player_idx)].hand.tolist()
+    take = gs.trade_offer_take.tolist()
 
-    actions = [ACT_TRADE_REJECT]
-
-    if np.all(hand >= take):
-        actions.insert(0, ACT_TRADE_ACCEPT)
-    return actions
+    for h, t in zip(hand, take):
+        if h < t:
+            return [ACT_TRADE_REJECT]
+    return [ACT_TRADE_ACCEPT, ACT_TRADE_REJECT]
 
 
 ## Helpers
@@ -587,31 +557,31 @@ def get_largest_army(gs: GameState, pid: np.uint8) -> np.uint8:
     army_size = gs.players[pid].used_knights
 
     if army_size < 3: return gs.largest_army_owner
-    if gs.largest_army_owner in (NONE_PLAYER, pid): return np.uint8(pid)
+    if gs.largest_army_owner in (NONE_PLAYER, pid): return pid
     
     larg_pid = gs.largest_army_owner
 
-    return np.uint8(pid) if army_size > gs.players[larg_pid].used_knights else np.uint8(larg_pid)
+    return pid if army_size > gs.players[larg_pid].used_knights else larg_pid
 
 def _calculate_longest_road(gs: GameState, pid: np.uint8) -> int:
-    road_owner     = gs.board.road_owner
-    sett_owner     = gs.board.settlement_owner
-    road_adj_sett  = gs.topology.road_adj_settlement
+    pid = int(pid)
+    road_owner = gs.board.road_owner.tolist()
+    sett_owner = gs.board.settlement_owner.tolist()
+    road_adj_sett = gs.topology.py_road_adj_sett
 
-    # roads you own
-    my_roads = [int(r) for r in np.where(road_owner == pid)[0]]
+    my_roads = [r for r, o in enumerate(road_owner) if o == pid]
     if not my_roads:
         return 0
 
     # settlements that block traversal (enemy)
-    enemy_sett = set(int(s) for s in np.where((sett_owner != -1) & (sett_owner != pid))[0])
+    enemy_sett = {s for s, o in enumerate(sett_owner) if o != -1 and o != pid}
 
     # settlement -> list of *your* incident roads (only if settlement not blocked)
     sett_to_roads: dict[int, list[int]] = {}
     endpoints: dict[int, tuple[int, int]] = {}
 
     for r in my_roads:
-        sA, sB = int(road_adj_sett[r, 0]), int(road_adj_sett[r, 1])
+        sA, sB = road_adj_sett[r]
         endpoints[r] = (sA, sB)
         if sA >= 0 and sA not in enemy_sett:
             sett_to_roads.setdefault(sA, []).append(r)
@@ -661,11 +631,11 @@ def get_longest_road(gs: GameState, pid: np.uint8, a: int) -> np.uint8:
 
         affected_pid = int(neigh_pids[0])
         new_length = _calculate_longest_road(gs, affected_pid)
-        gs.players[affected_pid].longest_road_len = np.uint8(new_length)
+        gs.players[affected_pid].longest_road_len = new_length
     
     elif action in (BUILD_ROAD, PLAY_ROAD_BUILDER):
         new_length = _calculate_longest_road(gs, pid)
-        gs.players[pid].longest_road_len = np.uint8(new_length)
+        gs.players[pid].longest_road_len = new_length
 
     # Check all roads against each-other
     longest_pid = int(gs.longest_road_owner)
@@ -679,7 +649,7 @@ def get_longest_road(gs: GameState, pid: np.uint8, a: int) -> np.uint8:
         if _length >= 5 and _length > longest_road:
             _longest_pid = _pid
 
-    return np.uint8(_longest_pid)
+    return _longest_pid
 
 def win_check(gs: GameState, pid: np.uint8) -> np.uint8:
     vps = get_victory_points(gs, pid)

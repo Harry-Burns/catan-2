@@ -16,14 +16,19 @@ from catan.interface import (
 )
 
 from catan.actions import *
+from catan.actions import ACT_PASS, ACT_ROLL, DISCARD_TABLE
 from catan.ids import (
     N_PLAYERS, N_RES
 )
 
 
 def apply_action_inplace(gs: GameState, a: int, rng: np.random.Generator) -> None:
-    action,arg1,arg2 = unpack_action(a)
-    player = int(gs.current_player_idx)
+    # unpack_action() inlined: this runs once per step and the call alone costs
+    # more than the three shifts.
+    action = (a >> 24) & 0xFF
+    arg1 = (a >> 12) & 0xFFF
+    arg2 = a & 0xFFF
+    player = gs.current_player_idx
 
     # --- Setup Logic
     if action == SETUP_RESPONSE:
@@ -33,7 +38,7 @@ def apply_action_inplace(gs: GameState, a: int, rng: np.random.Generator) -> Non
     # --- Turn / Fundamentals
     elif action == PASS:
         pass_turn(gs)
-        gs.prompt = np.uint8(PLAY_PRETURN)
+        gs.prompt = PLAY_PRETURN
 
     elif action == ROLL:
         roll = roll_dice(gs, rng)
@@ -41,29 +46,29 @@ def apply_action_inplace(gs: GameState, a: int, rng: np.random.Generator) -> Non
             handle_7(gs)
         else:
             distribute_resources(gs, roll)
-            gs.prompt = np.uint8(PLAY_TURN)
+            gs.prompt = PLAY_TURN
 
 
     # --- Robber-based
     elif action == SELECT_ROBBER_RESPONSE:
         hex_id,victim_pid = arg1, arg2
         move_robber(gs, rng, hex_id, victim_pid)
-        gs.prompt = np.uint8(PLAY_TURN)
+        gs.prompt = PLAY_TURN
 
 
     # --- Purchases
     elif action == BUILD_ROAD:
         purchase_road(gs, arg1)
-        gs.prompt = np.uint8(PLAY_TURN)
+        gs.prompt = PLAY_TURN
     elif action == BUILD_SETTLEMENT:
         purchase_settlement(gs, arg1)
-        gs.prompt = np.uint8(PLAY_TURN)
+        gs.prompt = PLAY_TURN
     elif action == BUILD_CITY:
         purchase_city(gs, arg1)
-        gs.prompt = np.uint8(PLAY_TURN)
+        gs.prompt = PLAY_TURN
     elif action == PURCHASE_DEV_CARD:
         purchase_dev_card(gs)
-        gs.prompt = np.uint8(PLAY_TURN)
+        gs.prompt = PLAY_TURN
 
 
     # --- Dev Cards
@@ -71,13 +76,13 @@ def apply_action_inplace(gs: GameState, a: int, rng: np.random.Generator) -> Non
         play_knight(gs)
     elif action == PLAY_MONOPOLY:
         play_monopoly(gs, arg1)
-        gs.prompt = np.uint8(PLAY_TURN) if gs.has_rolled else np.uint8(PLAY_PRETURN)
+        gs.prompt = PLAY_TURN if gs.has_rolled else PLAY_PRETURN
     elif action == PLAY_YEAR_OF_PLENTY:
         play_year_of_plenty(gs, arg1, arg2)
-        gs.prompt = np.uint8(PLAY_TURN) if gs.has_rolled else np.uint8(PLAY_PRETURN)
+        gs.prompt = PLAY_TURN if gs.has_rolled else PLAY_PRETURN
     elif action == PLAY_ROAD_BUILDER:
         play_road_builder(gs, arg1, arg2)
-        gs.prompt = np.uint8(PLAY_TURN) if gs.has_rolled else np.uint8(PLAY_PRETURN)
+        gs.prompt = PLAY_TURN if gs.has_rolled else PLAY_PRETURN
 
 
     # --- Trades
@@ -94,8 +99,8 @@ def apply_action_inplace(gs: GameState, a: int, rng: np.random.Generator) -> Non
         gs.trade_offer_from = int(gs.current_player_idx)
         gs.trade_accept_mask.fill(False)
 
-        gs.current_player_idx = np.uint8((gs.current_player_idx + 1) % N_PLAYERS)
-        gs.prompt = np.uint8(DECIDE_TRADE)
+        gs.current_player_idx = (gs.current_player_idx + 1) % N_PLAYERS
+        gs.prompt = DECIDE_TRADE
     elif action == TABLE_TRADE_SELECT:
         if arg1 != -1:
             pid1, pid2 = gs.current_player_idx, arg1
@@ -108,24 +113,24 @@ def apply_action_inplace(gs: GameState, a: int, rng: np.random.Generator) -> Non
         gs.trade_offer_give.fill(0)
         gs.trade_offer_take.fill(0)
 
-        gs.prompt = np.uint8(PLAY_TURN)
+        gs.prompt = PLAY_TURN
     elif action in [TABLE_TRADE_ACCEPT, TABLE_TRADE_REJECT]:
         if action == TABLE_TRADE_ACCEPT:
             gs.trade_accept_mask[player] = True
 
-        gs.current_player_idx = np.uint8((player + 1) % N_PLAYERS)
+        gs.current_player_idx = (player + 1) % N_PLAYERS
         
         if gs.current_player_idx != gs.current_player_turn_idx:
-            gs.prompt = np.uint8(DECIDE_TRADE)
+            gs.prompt = DECIDE_TRADE
         else:
             if any(gs.trade_accept_mask):
-                gs.prompt = np.uint8(DECIDE_ACCEPTEES)
+                gs.prompt = DECIDE_ACCEPTEES
             else:
                 gs.trade_offer_from = -1
                 gs.trade_accept_mask.fill(False)
                 gs.trade_offer_give.fill(0)
                 gs.trade_offer_take.fill(0)
-                gs.prompt = np.uint8(PLAY_TURN)
+                gs.prompt = PLAY_TURN
         
 
     # --- Discard Logic
@@ -170,38 +175,41 @@ def apply_action(gs: GameState, a: int, rng: np.random.Generator) -> GameState:
     return _gs
 
 
-def playable_moves(gs: GameState) -> np.ndarray: 
+def playable_moves(gs: GameState) -> list[int]:
+    """Legal actions for the current prompt.
 
-    if gs.prompt == SETUP_TURN:
-        actions = generate_playable_setup_moves(gs)
-        return np.array(actions, dtype=np.int32)
-    
-    elif gs.prompt == PLAY_PRETURN:
-        actions = generate_playable_dev_card_moves(gs)
-        actions.append(act_roll())
-        return np.array(actions, dtype=np.int32)
-    
-    elif gs.prompt == PLAY_TURN:
+    Branches are ordered by how often each prompt comes up. Returns a plain list:
+    nothing downstream indexes it as an array, so boxing it into an ndarray only
+    costs the caller an unbox per move.
+    """
+    prompt = gs.prompt
+
+    if prompt == PLAY_TURN:
         actions = generate_playable_dev_card_moves(gs)
         actions.extend(generate_playable_purchases(gs))
         actions.extend(generate_playable_trades(gs))
-        actions.append(act_pass())
-        return np.array(actions, dtype=np.int32)
-    
-    elif gs.prompt == MOVE_ROBBER:
-        actions = generate_robber_moves(gs)
-        return np.array(actions, dtype=np.int32)
-    
-    elif gs.prompt == DISCARD:
+        actions.append(ACT_PASS)
+        return actions
+
+    if prompt == PLAY_PRETURN:
+        actions = generate_playable_dev_card_moves(gs)
+        actions.append(ACT_ROLL)
+        return actions
+
+    if prompt == DECIDE_TRADE:
+        return trade_decision(gs)
+
+    if prompt == MOVE_ROBBER:
+        return generate_robber_moves(gs)
+
+    if prompt == DISCARD:
         hand = gs.players[gs.current_player_idx].hand
-        actions = [act_discard_resource(res) for res in range(N_RES) if hand[res] > 0]
-        return np.array(actions, dtype=np.int32)
-    
-    elif gs.prompt == DECIDE_TRADE:
-        actions = trade_decision(gs)
-        return np.asarray(actions, dtype=np.int32)
-    
-    elif gs.prompt == DECIDE_ACCEPTEES:
-        actions = trade_selection(gs)
-        return np.array(actions, dtype=np.int32)
-    
+        return [DISCARD_TABLE[res] for res in range(N_RES) if hand[res] > 0]
+
+    if prompt == SETUP_TURN:
+        return generate_playable_setup_moves(gs)
+
+    if prompt == DECIDE_ACCEPTEES:
+        return trade_selection(gs)
+
+    raise ValueError(f"No move generator for prompt: {prompt}")

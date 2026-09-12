@@ -4,6 +4,8 @@ from typing import Optional
 
 from catan.topology import BoardTopology
 
+# Scalars below are plain Python ints, not numpy scalars: at this scale the
+# boxing costs ~60x the arithmetic (see catan/engine.py hot path).
 @dataclass
 class BoardState:
     # Ownership
@@ -12,24 +14,24 @@ class BoardState:
     settlement_type:  np.ndarray       # (N_SETT,)  uint8 -> {EMPTY, SETTLEMENT, CITY}
 
     # Robber / decks / bank
-    robber_hex: np.uint16
+    robber_hex: int
     dev_deck:   np.ndarray       # (N_DEV_TOTAL,) uint8 -> dev card ids (stack top = last index)
     bank_res:   np.ndarray       # (N_RES,) int16
 
 @dataclass
 class PlayerState:
     hand: np.ndarray             # (N_RES,) int8
-    ports_mask: np.uint8         # bit0=3:1 any, bits1..5 = 2:1 per resource
+    ports_mask: int              # bit0=3:1 any, bits1..5 = 2:1 per resource
     dev_cards: np.ndarray        # (N_DEV_TYPES,) int8  (counts)
     new_dev_cards: np.ndarray    # (N_DEV_TYPES,) int8  (counts)
-    used_knights: np.uint8       # for largest army
-    longest_road_len: np.uint8
-    discards_required: np.uint8
+    used_knights: int            # for largest army
+    longest_road_len: int
+    discards_required: int
 
     # Piece counts (for limits/scoring)
-    roads_built: np.uint8
-    settlements_built: np.uint8
-    cities_built: np.uint8
+    roads_built: int
+    settlements_built: int
+    cities_built: int
 
 @dataclass
 class GameState:
@@ -37,27 +39,27 @@ class GameState:
     board: BoardState
     players: list[PlayerState]
 
-    current_player_idx: np.uint8
-    current_player_turn_idx: np.uint8
+    current_player_idx: int
+    current_player_turn_idx: int
 
     in_setup: bool
-    setup_turn_idx: np.int16
+    setup_turn_idx: int
 
     trade_offer_from: int              # -1 if none
     trade_offer_give: Optional[np.ndarray]  # (N_RES,) int8
     trade_offer_take: Optional[np.ndarray]  # (N_RES,) int8
     trade_accept_mask: Optional[np.ndarray] # (N_PLAYERS,) bool
 
-    longest_road_owner: np.uint8
-    largest_army_owner: np.uint8
+    longest_road_owner: int
+    largest_army_owner: int
 
     has_rolled: bool
     dev_card_used: bool
-    winner: np.uint8
+    winner: int
 
     # Prompt / phase
-    turn_index: np.int32
-    prompt: np.uint8
+    turn_index: int
+    prompt: int
     action_log: list[int]
 
     def clone_shallow(self) -> "GameState":

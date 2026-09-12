@@ -101,43 +101,109 @@ class JSettlersPlayer(Player):
     # ================================================================== #
     #  Production / ETA primitives (SOCBuildingSpeedEstimate-lite)        #
     # ================================================================== #
-    def _node_production(self, gs: GameState, sid: int, respect_robber: bool) -> np.ndarray:
-        """Pips per resource for a single settlement node (settlement multiplier)."""
+    # --- cached board-derived production tables -----------------------
+    def _tables(self, gs: GameState):
+        """Per-board static production tables (topology is frozen per game)."""
+        t = getattr(self, "_tbl", None)
+        if t is not None and t["topo"] is gs.topology:
+            return t
         topo = gs.topology
-        prod = np.zeros(N_RES, dtype=np.float64)
-        robber = int(gs.board.robber_hex)
-        hex_sett = topo.hex_settlement_ix
-        for hid in range(hex_sett.shape[0]):
-            if respect_robber and hid == robber:
-                continue
-            if sid not in hex_sett[hid]:
-                continue
-            res = int(topo.hex_resource[hid])
-            if res == DESERT:
-                continue
-            prod[res] += PIPS[int(topo.hex_number[hid])]
-        return prod
+        hex_sett = topo.py_hex_settlement
+        n_hex = len(hex_sett)
+        n_sett = gs.board.settlement_owner.shape[0]
 
-    def _player_production(self, gs: GameState, pid: int, respect_robber: bool = True) -> np.ndarray:
-        """Total pips per resource across a player's settlements (x1) and cities (x2)."""
-        topo = gs.topology
-        board = gs.board
-        prod = np.zeros(N_RES, dtype=np.float64)
-        robber = int(board.robber_hex)
-        for hid in range(topo.hex_settlement_ix.shape[0]):
-            if respect_robber and hid == robber:
-                continue
-            res = int(topo.hex_resource[hid])
-            num = int(topo.hex_number[hid])
+        hex_prod = np.zeros((n_hex, N_RES), dtype=np.float64)    # per-hex pip vector
+        node_prod = np.zeros((n_sett, N_RES), dtype=np.float64)  # robber-free node prod
+        for hid in range(n_hex):
+            res = topo.py_hex_resource[hid]
+            num = topo.py_hex_number[hid]
             if res == DESERT or num == 0:
                 continue
-            p = PIPS[num]
-            for sid in topo.hex_settlement_ix[hid]:
-                sid = int(sid)
-                if sid < 0 or int(board.settlement_owner[sid]) != pid:
-                    continue
-                prod[res] += p * (2.0 if int(board.settlement_type[sid]) == CITY else 1.0)
+            hex_prod[hid, res] = PIPS[num]
+            for sid in hex_sett[hid]:
+                node_prod[sid, res] += PIPS[num]
+
+        node_hexes = [[] for _ in range(n_sett)]
+        for hid, nodes in enumerate(hex_sett):
+            for sid in nodes:
+                node_hexes[sid].append(hid)
+
+        # The part of _setup_node_score that depends only on the board.
+        ports = topo.py_port_bit
+        setup_base = [
+            float(node_prod[sid].sum())
+            + 2.0 * float((node_prod[sid] > 0).sum())
+            + (2.5 if sid in ports else 0.0)
+            + 0.25 * (node_prod[sid][WHEAT] + node_prod[sid][ORE])
+            for sid in range(n_sett)
+        ]
+
+        t = {
+            "topo": topo,
+            "node_prod": node_prod,
+            "node_prod_list": node_prod.tolist(),
+            "node_sum": node_prod.sum(axis=1).tolist(),
+            "hex_prod": hex_prod,
+            "hex_nodes": [tuple(x) for x in hex_sett],
+            "node_hexes": [tuple(x) for x in node_hexes],
+            "setup_base": setup_base,
+        }
+        self._tbl = t
+        return t
+
+    def _node_production(self, gs: GameState, sid: int, respect_robber: bool) -> np.ndarray:
+        """Pips per resource for a single settlement node (settlement multiplier)."""
+        t = self._tables(gs)
+        prod = t["node_prod"][sid]
+        if respect_robber:
+            robber = int(gs.board.robber_hex)
+            if robber in t["node_hexes"][sid]:
+                return prod - t["hex_prod"][robber]
         return prod
+
+    def _node_production_sum(self, gs: GameState, sid: int, respect_robber: bool) -> float:
+        """`_node_production(...).sum()` without materialising the vector."""
+        t = self._tables(gs)
+        total = t["node_sum"][sid]
+        if respect_robber:
+            robber = int(gs.board.robber_hex)
+            if robber in t["node_hexes"][sid]:
+                total -= float(t["hex_prod"][robber].sum())
+        return total
+
+    def _player_production(self, gs: GameState, pid: int, respect_robber: bool = True) -> np.ndarray:
+        return self._player_production_list(gs, pid, respect_robber)[0]
+
+    def _player_production_list(self, gs: GameState, pid: int, respect_robber: bool = True):
+        """Total pips per resource across a player's settlements (x1) and cities (x2).
+
+        Ownership changes only on a build, so the result is memoised against the
+        raw ownership bytes rather than recomputed per candidate node.
+        """
+        board = gs.board
+        t = self._tables(gs)
+        key = (board.settlement_owner.tobytes(), board.settlement_type.tobytes(),
+               pid, int(board.robber_hex) if respect_robber else -1)
+        c = getattr(self, "_pp_cache", None)
+        if c is not None and c[0] == key:
+            return c[1], c[2]
+
+        owner = board.settlement_owner
+        node_prod = t["node_prod"]
+        mult = np.where(owner == pid, np.where(board.settlement_type == CITY, 2.0, 1.0), 0.0)
+        prod = mult @ node_prod
+        if respect_robber:
+            robber = int(board.robber_hex)
+            m = 0.0
+            for sid in t["node_hexes"][robber]:
+                if owner[sid] == pid:
+                    m += 2.0 if board.settlement_type[sid] == CITY else 1.0
+            if m:
+                prod = prod - m * t["hex_prod"][robber]
+
+        lst = prod.tolist()
+        self._pp_cache = (key, prod, lst)
+        return prod, lst
 
     def _eta(self, prod: np.ndarray, hand: np.ndarray, cost: np.ndarray) -> float:
         """Rough rolls-to-afford `cost`: the bottleneck resource dominates.
@@ -162,24 +228,19 @@ class JSettlersPlayer(Player):
     #  Node scoring (OpeningBuildStrategy)                                #
     # ================================================================== #
     def _touches_port(self, gs: GameState, sid: int) -> bool:
-        return bool(np.any(gs.topology.port_settlement_ix == sid))
+        return sid in gs.topology.py_port_bit
 
     def _setup_node_score(self, gs: GameState, pid: int, sid: int) -> float:
-        prod = self._node_production(gs, sid, respect_robber=False)
-        total = float(prod.sum())
-        diversity = float((prod > 0).sum())
+        t = self._tables(gs)
+        _, existing = self._player_production_list(gs, pid, respect_robber=False)
+        row = t["node_prod_list"][sid]
 
-        score = total + 2.0 * diversity
-        if self._touches_port(gs, sid):
-            score += 2.5
-        # Slight preference for the city engine (wheat + ore).
-        score += 0.25 * (prod[WHEAT] + prod[ORE])
         # Complement what we already produce (reward resources we currently lack).
-        existing = self._player_production(gs, pid, respect_robber=False)
+        bonus = 0.0
         for r in range(N_RES):
             if existing[r] == 0:
-                score += 0.5 * prod[r]
-        return score
+                bonus += row[r]
+        return t["setup_base"][sid] + 0.5 * bonus
 
     # ================================================================== #
     #  SETUP_TURN                                                         #
@@ -206,7 +267,7 @@ class JSettlersPlayer(Player):
             _, _sid, rid = unpack_action(a)
             sA, sB = int(r_adj_sett[rid, 0]), int(r_adj_sett[rid, 1])
             other = sB if sA == best_sid else sA
-            dir_score = float(self._node_production(gs, other, respect_robber=False).sum()) if other >= 0 else 0.0
+            dir_score = self._node_production_sum(gs, other, respect_robber=False) if other >= 0 else 0.0
             if dir_score > best_dir:
                 best_dir, best_move = dir_score, a
         return best_move
@@ -260,8 +321,8 @@ class JSettlersPlayer(Player):
         # 2) Upgrade to a city -> the node whose doubled production gains the most.
         cities = buckets.get(BUILD_CITY, [])
         if cities:
-            return max(cities, key=lambda a: self._node_production(
-                gs, unpack_action(a)[1], respect_robber=True).sum())
+            return max(cities, key=lambda a: self._node_production_sum(
+                gs, unpack_action(a)[1], respect_robber=True))
 
         # 3) Build a settlement -> best-scoring reachable node (+1 VP, more prod).
         setts = buckets.get(BUILD_SETTLEMENT, [])

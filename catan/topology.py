@@ -1,6 +1,10 @@
 from dataclasses import dataclass
 import numpy as np
 
+from functools import lru_cache
+
+from catan.ids import DESERT
+
 @dataclass(frozen=True)
 class BoardTopology:
     ## - Hexes
@@ -22,6 +26,44 @@ class BoardTopology:
     ## - Ports (bitmasks for players live in dynamic state; below are geometry hooks)
     port_settlement_ix: np.ndarray     # (N_PORT,2) int16 -> settlements touching each port
     port_res_id:  np.ndarray     # (N_PORT,)  int8  -> 0..4 for 2:1, or -1 for 3:1-any
+
+    def __post_init__(self):
+        """Python-native mirrors of the (frozen) lookup tables.
+
+        Every hot path indexes these 19/54/72-entry tables one element at a time;
+        at that size numpy scalar boxing costs far more than it saves.
+        """
+        o = object.__setattr__
+
+        def pos(row):
+            """Row as plain ints, with the -1 padding dropped."""
+            return tuple(int(v) for v in row if v >= 0)
+
+        o(self, "py_hex_settlement", tuple(pos(r) for r in self.hex_settlement_ix))
+        o(self, "py_sett_adj_sett", tuple(pos(r) for r in self.settlement_adj_settlement))
+        o(self, "py_sett_adj_roads", tuple(pos(r) for r in self.settlement_adj_roads))
+        o(self, "py_road_adj_sett", tuple(tuple(int(v) for v in r) for r in self.road_adj_settlement))
+        o(self, "py_hex_resource", tuple(int(v) for v in self.hex_resource))
+        o(self, "py_hex_number", tuple(int(v) for v in self.hex_number))
+
+        # dice total -> ((resource, (settlement ids...)), ...) for every producing hex
+        rolls = {}
+        for hid, num in enumerate(self.py_hex_number):
+            res = self.py_hex_resource[hid]
+            if num == 0 or res == DESERT:
+                continue
+            rolls.setdefault(num, []).append((hid, res, self.py_hex_settlement[hid]))
+        o(self, "py_roll_hexes", {k: tuple(v) for k, v in rolls.items()})
+
+        # settlement id -> port bit (0 = 3:1 any, res+1 = 2:1), or None
+        port_bit = {}
+        for pid_, sids in enumerate(self.port_settlement_ix):
+            res = int(self.port_res_id[pid_])
+            bit = 0 if res == -1 else res + 1
+            for sid in sids:
+                if int(sid) >= 0:
+                    port_bit.setdefault(int(sid), bit)
+        o(self, "py_port_bit", port_bit)
 
 
 ## --- Constants
@@ -52,6 +94,7 @@ def _relative_settlement_index(offset:tuple[int,int], shared:tuple[int,int]) -> 
         if target == {tuple(grp[0]), tuple(grp[1])}: return idx
     raise RuntimeError("relative settlement index not found")
 
+@lru_cache(maxsize=1)
 def generate_topology() -> BoardTopology:
     # 1) Grid & hex IDs
     grid = np.full((ROWS, COLS), -1, dtype=np.int16)
