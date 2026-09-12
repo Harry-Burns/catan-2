@@ -240,12 +240,36 @@ def play_road_builder(gs: GameState, rid1: int, rid2: int):
     gs.dev_card_used = True
 
 
+def _grant_setup_resources(gs: GameState, pid: int, sid: int):
+    """Pay out for a second setup settlement.
+
+    Almanac, 'Set-up Phase', Round Two: "Each player receives their starting
+    resources immediately after building their second settlement. For each
+    terrain hex adjacent to this second settlement, take a corresponding
+    resource card."
+    """
+    topo = gs.topology
+    hand = gs.players[pid].hand
+    bank = gs.board.bank_res
+
+    for hid in topo.py_sett_adj_hex[sid]:
+        res = topo.py_hex_resource[hid]
+        if res == DESERT:
+            continue
+        if bank[res] > 0:
+            bank[res] -= 1
+            hand[res] += 1
+
+
 def setup_response(gs: GameState, sid: int, rid: int):
     pid = int(gs.current_player_idx)
 
     _place_settlement(gs, pid, sid)
     gs.board.road_owner[rid] = pid
     gs.players[pid].roads_built += 1
+
+    if gs.players[pid].settlements_built == 2:
+        _grant_setup_resources(gs, pid, sid)
 
     if gs.setup_turn_idx == (N_PLAYERS * 2) - 1:
         gs.in_setup = False
@@ -328,22 +352,36 @@ def _get_placeable_roads_from(gs: GameState, extra_road: int=-1) -> np.ndarray:
     return np.fromiter(spaces, dtype=np.int32, count=len(spaces))
 
 def _generate_playable_road_builder(gs: GameState) -> np.ndarray:
+    """Road pairs the card could place, as (rid1, rid2).
+
+    A pair of equal ids means "place this one road and forfeit the other":
+    play_road_builder() skips the second when the two match. That happens when
+    the supply is down to its last piece, or when the board simply has nowhere
+    to put a second road -- the card is still playable for the one road, which
+    is what "place 2 free roads according to normal building rules" means when
+    only one placement is legal.
+    """
     pid = int(gs.current_player_idx)
-    if gs.players[pid].roads_built >= ROADS_ALLOWED:
-        return np.asarray([], dtype=np.int32)
-    
+    remaining = ROADS_ALLOWED - gs.players[pid].roads_built
+    if remaining <= 0:
+        return np.empty((0, 2), dtype=np.int32)
+
     first_roads = _get_placeable_roads_from(gs)
 
-    if gs.players[pid].roads_built == ROADS_ALLOWED - 1:
-        return np.stack([first_roads, first_roads], axis=1)
+    if remaining == 1:
+        return np.asarray([(int(r), int(r)) for r in first_roads],
+                          dtype=np.int32).reshape(-1, 2)
 
     spaces = []
     for rid1 in first_roads:
-        second_roads = _get_placeable_roads_from(gs, rid1)
-        for rid2 in second_roads:
-            if rid1 != rid2:
-                spaces.append((int(rid1), int(rid2)))
-    return np.asarray(spaces, dtype=np.int32)
+        rid1 = int(rid1)
+        second_roads = [int(r) for r in _get_placeable_roads_from(gs, rid1)
+                        if int(r) != rid1]
+        if second_roads:
+            spaces.extend((rid1, rid2) for rid2 in second_roads)
+        else:
+            spaces.append((rid1, rid1))
+    return np.asarray(spaces, dtype=np.int32).reshape(-1, 2)
 
 
 ## --- Setup Turn
@@ -464,8 +502,14 @@ def generate_robber_moves(gs: GameState) -> list[int]:
             if owner != -1 and owner != pid:
                 victims.add(owner)
 
-        actions.extend(row[_pid] for _pid in victims)
-        actions.append(row[NONE_PLAYER])
+        # Rulebook p.5: after moving the robber you steal from an opponent with
+        # a building on that hex. Not optional -- "steal from nobody" is only an
+        # option when nobody is there to rob. (Robbing a player who happens to
+        # hold no cards is legal and simply yields nothing.)
+        if victims:
+            actions.extend(row[_pid] for _pid in victims)
+        else:
+            actions.append(row[NONE_PLAYER])
 
     return actions
 
@@ -582,12 +626,16 @@ def _calculate_longest_road(gs: GameState, pid: np.uint8) -> int:
     sett_to_roads: dict[int, list[int]] = {}
     endpoints: dict[int, tuple[int, int]] = {}
 
+    # Every endpoint goes in, occupied ones included. An opponent's building
+    # breaks a road, it does not delete the segments either side of it, so a run
+    # may start or end at one -- it just may not pass through. That is enforced
+    # in the walk below, where we only recurse into an unblocked node.
     for r in my_roads:
         sA, sB = road_adj_sett[r]
         endpoints[r] = (sA, sB)
-        if sA >= 0 and sA not in enemy_sett:
+        if sA >= 0:
             sett_to_roads.setdefault(sA, []).append(r)
-        if sB >= 0 and sB not in enemy_sett:
+        if sB >= 0:
             sett_to_roads.setdefault(sB, []).append(r)
 
     used_edges: set[int] = set()

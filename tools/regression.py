@@ -24,9 +24,9 @@ from catan.ids import NONE_PLAYER                                 # noqa: E402
 MAX_STEPS = 10_000
 
 EXPECTED = {
-    "picker": "7cb5095ba1f42fe5",
-    "jsettlers": "d7c706b27ce2f339",
-    "seeded_random": "2cef688b7de11da0",
+    "picker": "dbced5e5d52812da",
+    "jsettlers": "504815773ed9e054",
+    "seeded_random": "cb03b539c96e94a6",
 }
 
 

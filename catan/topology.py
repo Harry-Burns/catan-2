@@ -40,6 +40,15 @@ class BoardTopology:
             return tuple(int(v) for v in row if v >= 0)
 
         o(self, "py_hex_settlement", tuple(pos(r) for r in self.hex_settlement_ix))
+
+        # intersection -> the hexes it borders (1 to 3)
+        n_sett = self.settlement_adj_roads.shape[0]
+        sett_hexes = [[] for _ in range(n_sett)]
+        for hid, row in enumerate(self.hex_settlement_ix):
+            for sid in pos(row):
+                sett_hexes[sid].append(hid)
+        o(self, "py_sett_adj_hex", tuple(tuple(h) for h in sett_hexes))
+
         o(self, "py_sett_adj_sett", tuple(pos(r) for r in self.settlement_adj_settlement))
         o(self, "py_sett_adj_roads", tuple(pos(r) for r in self.settlement_adj_roads))
         o(self, "py_road_adj_sett", tuple(tuple(int(v) for v in r) for r in self.road_adj_settlement))

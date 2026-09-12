@@ -110,37 +110,46 @@ def sticky_robber(original):
     return patched
 
 
+# (name, function in catan.engine, wrapper, codes that must appear, bot)
+# The bot matters: a random player almost never upgrades to a city, so a fault
+# in city building would simply never be exercised, and the run would look like
+# a hole in the verifier rather than a gap in coverage.
 MUTATIONS = [
-    # (name, function in catan.engine, wrapper, codes that must appear)
     ("free roads", "purchase_road", free_roads,
-     ("BUILD_COST_WRONG",)),
-    # Note: stealing an extra card moves it between players, so the resource
-    # totals still balance. Only the per-action check can see this one.
+     ("BUILD_COST_WRONG",), "random"),
+    # Stealing an extra card moves it between players, so the resource totals
+    # still balance. Only the per-action check can see this one.
     ("robber steals two", "move_robber", greedy_robber,
-     ("ROBBER_STEAL_AMOUNT",)),
+     ("ROBBER_STEAL_AMOUNT",), "random"),
     ("cards from nowhere", "distribute_resources", counterfeit_cards,
-     ("RESOURCE_CONSERVATION",)),
+     ("RESOURCE_CONSERVATION",), "random"),
     ("half the discards", "handle_7", soft_discard,
-     ("DISCARD_AMOUNT_WRONG",)),
+     ("DISCARD_AMOUNT_WRONG",), "random"),
     ("longest road for free", "get_longest_road", eager_longest_road,
-     ("LONGEST_ROAD_OWNER",)),
+     ("LONGEST_ROAD_OWNER",), "random"),
     ("knights never spent", "play_knight", phantom_knight,
-     ("DEV_CARD_CONSERVATION",)),
+     ("DEV_CARD_CONSERVATION",), "random"),
     ("city that is not built", "purchase_city", paper_city,
-     ("CITY_NOT_PLACED",)),
+     ("CITY_NOT_PLACED",), "jsettlers"),
     ("robber does not move", "move_robber", sticky_robber,
-     ("ROBBER_NOT_MOVED",)),
+     ("ROBBER_NOT_MOVED",), "random"),
 ]
 
 # Codes a clean engine must not produce. (Findings the verifier legitimately
 # reports on the current engine are listed in the run output, not here.)
-MUST_BE_SILENT = sorted({code for _, _, _, codes in MUTATIONS for code in codes})
+MUST_BE_SILENT = sorted({code for m in MUTATIONS for code in m[3]})
 
 
-def run(games: int, seed: int, max_steps: int):
+def bot_factory(kind: str):
+    if kind == "jsettlers":
+        from players.player_jsettlers import JSettlersPlayer
+        return lambda pid, s: JSettlersPlayer(player_id=pid, seed=s)
+    return lambda pid, s: RandomBot(pid, s)
+
+
+def run(games: int, seed: int, max_steps: int, bot: str = "random"):
     return verify_games(
-        lambda pid, s: RandomBot(pid, s),
-        n_games=games, base_seed=seed, max_steps=max_steps,
+        bot_factory(bot), n_games=games, base_seed=seed, max_steps=max_steps,
     )
 
 
@@ -165,12 +174,19 @@ def main() -> int:
         print(f"ok    ({baseline.steps} steps, {baseline.checks:,} assertions, "
               f"none of the fault codes fired)")
 
-    for name, target, wrapper, expected in MUTATIONS:
+    for name, target, wrapper, expected, bot in MUTATIONS:
         print(name.ljust(width), end="", flush=True)
         original = getattr(engine, target)
-        setattr(engine, target, wrapper(original))
+        patched = wrapper(original)
+        hits = [0]
+
+        def counting(*a, _p=patched, _h=hits, **kw):
+            _h[0] += 1
+            return _p(*a, **kw)
+
+        setattr(engine, target, counting)
         try:
-            report = run(args.games, args.seed, args.max_steps)
+            report = run(args.games, args.seed, args.max_steps, bot)
             counts = report.counts()
         except Exception as exc:                      # a broken engine may throw
             counts = {}
@@ -178,18 +194,22 @@ def main() -> int:
         finally:
             setattr(engine, target, original)
 
-        caught = [code for code in expected if counts.get(code)]
         missed = [code for code in expected if not counts.get(code)]
-        if missed:
+        if hits[0] == 0:
+            # The fault never fired, so this run proves nothing either way.
             failures += 1
-            print(f"FAIL  missed {missed}")
+            print(f"NOT EXERCISED  {target}() was never called by the {bot} bot "
+                  f"-- raise --games or pick a bot that reaches this path")
+        elif missed:
+            failures += 1
+            print(f"FAIL  missed {missed} ({hits[0]} chances)")
         else:
-            detail = ", ".join(f"{c} x{counts[c]}" for c in caught)
-            print(f"ok    caught {detail}")
+            detail = ", ".join(f"{c} x{counts[c]}" for c in expected)
+            print(f"ok    caught {detail} ({hits[0]} chances)")
 
     print()
     if failures:
-        print(f"{failures} mutation(s) went undetected -- the verifier has a hole.")
+        print(f"{failures} mutation(s) were not caught or not exercised.")
         return 1
     print(f"All {len(MUTATIONS)} injected faults were caught, and none of them "
           f"fired on the clean engine.")

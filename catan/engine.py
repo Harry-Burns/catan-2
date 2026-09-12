@@ -53,7 +53,9 @@ def apply_action_inplace(gs: GameState, a: int, rng: np.random.Generator) -> Non
     elif action == SELECT_ROBBER_RESPONSE:
         hex_id,victim_pid = arg1, arg2
         move_robber(gs, rng, hex_id, victim_pid)
-        gs.prompt = PLAY_TURN
+        # A knight played before the roll sends us here mid-preturn; going
+        # straight to PLAY_TURN would skip the roll for the whole turn.
+        gs.prompt = PLAY_TURN if gs.has_rolled else PLAY_PRETURN
 
 
     # --- Purchases

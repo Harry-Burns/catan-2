@@ -247,14 +247,18 @@ class LegalityAuditor:
 
         actor = snap.current_player_idx
         legal = set()
-        steal_available = False
+        declinable = []
         for hid in ref.legal_robber_hexes(self.topo, snap):
             victims = ref.robbable_players(self.topo, snap, hid, actor)
-            for v in victims:
-                legal.add((hid, v))
-            legal.add((hid, NONE_PLAYER))
-            if any(snap.total_cards(v) > 0 for v in victims):
-                steal_available = True
+            if victims:
+                # Stealing is mandatory when someone is there to rob, so
+                # "nobody" is not on the menu for this hex.
+                for v in victims:
+                    legal.add((hid, v))
+                if (hid, NONE_PLAYER) in offered:
+                    declinable.append((hid, sorted(victims)))
+            else:
+                legal.add((hid, NONE_PLAYER))
 
         self._compare(
             label, offered, legal,
@@ -262,13 +266,13 @@ class LegalityAuditor:
                       f"{'none' if x[1] == NONE_PLAYER else x[1]}",
         )
         self._check(
-            not (steal_available and any(v == NONE_PLAYER for _, v in offered)),
-            "ROBBER_DECLINE_OFFERED", Severity.DEVIATION,
-            "the engine lets a player move the robber and decline to steal, even "
-            "when an adjacent opponent holds cards",
+            not declinable, "ROBBER_DECLINE_OFFERED", Severity.DEVIATION,
+            f"{len(declinable)} hex(es) offer moving the robber there and stealing "
+            f"from nobody, while an opponent has a building on them",
             "Rulebook p.5: 'Then you steal 1 (random) resource card from an opponent "
             "who has a settlement or city adjacent to the target terrain hex.' "
-            "Stealing is not optional when a victim is available.",
+            "Stealing is not optional when a victim is available.\n"
+            + "\n".join(f"hex {hid}: opponents {vs}" for hid, vs in declinable[:5]),
         )
         self._check(
             all(hid != snap.robber_hex for hid, _ in offered),
