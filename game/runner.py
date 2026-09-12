@@ -42,7 +42,9 @@ def pure_runner(seed: int, player_cls_paths: list[str], max_steps: int = 10_000,
     PlayerClasses = [_resolve_class(p) for p in player_cls_paths]
     eng = Engine(seed=int(seed))
     gs = eng.gs
-    players = [PlayerClasses[i](player_id=i) for i in range(N_PLAYERS)]
+    # Derive each player's stream from the game seed so the run is reproducible.
+    players = [PlayerClasses[i](player_id=i, seed=int(seed) * N_PLAYERS + i)
+               for i in range(N_PLAYERS)]
 
     steps = 0
     while gs.winner == NONE_PLAYER and steps < max_steps:

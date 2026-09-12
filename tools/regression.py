@@ -26,6 +26,7 @@ MAX_STEPS = 10_000
 EXPECTED = {
     "picker": "7cb5095ba1f42fe5",
     "jsettlers": "d7c706b27ce2f339",
+    "seeded_random": "2cef688b7de11da0",
 }
 
 
@@ -80,7 +81,36 @@ def run_jsettlers(n_games=40, seed0=1000):
     return out.hexdigest()[:16]
 
 
-SUITES = {"picker": run_picker, "jsettlers": run_jsettlers}
+def run_seeded_random(n_games=40, seed0=2000):
+    """Seeded random players.
+
+    This suite only has a stable digest if Player.rng is actually per-instance
+    and seeded -- if anything reverts to the global `random` / `np.random`, the
+    digest goes non-deterministic and this fails.
+    """
+    from players.player import RandomDistributedNoTrades
+
+    out = hashlib.md5()
+    for game in range(n_games):
+        seed = seed0 + game
+        eng = Engine(seed=seed)
+        gs = eng.gs
+        players = [RandomDistributedNoTrades(player_id=i, seed=seed * 4 + i) for i in range(4)]
+        steps = 0
+        while int(gs.winner) == NONE_PLAYER and steps < MAX_STEPS:
+            moves = playable_moves(gs)
+            action = players[int(gs.current_player_idx)].decide(gs, moves)
+            apply_action_inplace(gs, action, eng.rng)
+            steps += 1
+        _digest_state(gs, steps, out)
+    return out.hexdigest()[:16]
+
+
+SUITES = {
+    "picker": run_picker,
+    "jsettlers": run_jsettlers,
+    "seeded_random": run_seeded_random,
+}
 
 
 def main(record=False):

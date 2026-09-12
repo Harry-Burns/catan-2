@@ -54,7 +54,9 @@ def _multi_worker(args: Tuple[List[int], List[str], int, List[int]]) -> List[Dic
         eng = Engine(seed=int(seed))
         gs = eng.gs
         rotated = PlayerClasses[offset:] + PlayerClasses[:offset]
-        players = [rotated[i](player_id=i) for i in range(len(rotated))]
+        # Derive each player's stream from the game seed so the run is reproducible.
+        players = [rotated[i](player_id=i, seed=int(seed) * len(rotated) + i)
+                   for i in range(len(rotated))]
         steps = 0
         while gs.winner == NONE_PLAYER and steps < max_steps:
             moves = playable_moves(gs)
