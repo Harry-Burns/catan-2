@@ -145,7 +145,7 @@ def apply_action_inplace(gs: GameState, a: int, rng: np.random.Generator) -> Non
                 gs.prompt = DISCARD
             else:
                 gs.current_player_idx = gs.current_player_turn_idx
-                gs.prompt = PLAY_TURN
+                gs.prompt = MOVE_ROBBER
         else:
             gs.prompt = DISCARD
 
