@@ -437,7 +437,9 @@ def generate_playable_purchases(gs: GameState) -> list[int]:
     if wh >= 2 and o >= 3 and player.cities_built < CITIES_ALLOWED:
         actions.extend(BUILD_CITY_TABLE[int(cid)] for cid in _get_placeable_cities(gs))
 
-    if sh >= 1 and wh >= 1 and o >= 1 and gs.board.dev_deck.any():
+    # dev_deck holds card *ids*, so test how many cards are left, not their
+    # values -- KNIGHT is id 0, and .any() reads an all-knight deck as empty.
+    if sh >= 1 and wh >= 1 and o >= 1 and gs.board.dev_deck.size:
         actions.append(ACT_PURCHASE_DEV)
 
     return actions
