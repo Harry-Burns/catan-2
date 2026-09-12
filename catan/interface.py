@@ -292,7 +292,7 @@ def move_robber(gs: GameState, rng: np.random.Generator, hex_id: int, victim_pid
             gs.players[gs.current_player_idx].hand[random_card] += 1
             gs.players[victim_pid].hand[random_card] -= 1
 
-    gs.board.robber_hex = np.uint16(hex_id)
+    gs.board.robber_hex = hex_id
     
 
 
