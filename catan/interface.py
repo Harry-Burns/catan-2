@@ -65,6 +65,7 @@ def roll_dice(gs: GameState, rng: np.random.Generator) -> int:
     d1 = int(rng.integers(1,7))
     d2 = int(rng.integers(1,7))
     gs.has_rolled = True
+    gs.last_dice_roll = (d1, d2)
     return d1 + d2
 
 def handle_7(gs: GameState) -> np.ndarray:

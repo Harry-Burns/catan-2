@@ -3,660 +3,176 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Catan Board</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        :root {
-            --bg: #2b2f33;
-            --panel: #3a3f44;
-            --panel-2: #454b51;
-            --border: #5a616a;
-            --text: #e8eaed;
-            --text-dim: #a7afb8;
-            --accent: #4ea1ff;
-        }
-        * { box-sizing: border-box; }
-        body {
-            font-family: 'Inter', system-ui, sans-serif;
-            background-color: var(--bg);
-            color: var(--text);
-            margin: 0;
-        }
-
-        .catan-container {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            padding: 1rem;
-            min-height: 100vh;
-            gap: 1rem;
-        }
-
-        /* ---- Top status bar ---- */
-        .status-bar {
-            width: 100%;
-            max-width: 1450px;
-            display: flex;
-            flex-wrap: wrap;
-            align-items: center;
-            justify-content: space-between;
-            gap: 12px;
-            background: var(--panel);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            padding: 12px 18px;
-        }
-        .status-title { font-size: 1.4rem; font-weight: 700; letter-spacing: -0.01em; }
-        .status-chips { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-        .chip {
-            background: var(--panel-2);
-            border: 1px solid var(--border);
-            border-radius: 999px;
-            padding: 5px 12px;
-            font-size: 0.8rem;
-            white-space: nowrap;
-        }
-        .chip b { color: #fff; font-weight: 600; }
-        .chip.dice { font-weight: 700; color: #fff; }
-        .chip.winner { background: #b8860b; border-color: #ffd700; color: #fff; font-weight: 700; }
-        .chip.phase { color: var(--accent); }
-
-        button#refresh-button {
-            background: var(--accent);
-            color: #fff;
-            border: none;
-            padding: 8px 16px;
-            border-radius: 8px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: filter 0.15s, transform 0.1s;
-        }
-        button#refresh-button:hover { filter: brightness(1.1); }
-        button#refresh-button:active { transform: translateY(1px); }
-        button#refresh-button:disabled { opacity: 0.6; cursor: default; }
-
-        /* ---- Main layout: board + side panels ---- */
-        .main-layout {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 1rem;
-            width: 100%;
-            max-width: 1450px;
-            justify-content: center;
-            align-items: flex-start;
-        }
-        .board-column { display: flex; flex-direction: column; gap: 1rem; flex: 1 1 560px; min-width: 320px; max-width: 850px; }
-
-        #catan-board-svg-container {
-            width: 100%;
-            background-color: #3f6478;
-            padding: 12px;
-            border-radius: 12px;
-            box-shadow: 0 10px 20px rgba(0,0,0,0.25);
-            border: 1px solid var(--border);
-        }
-        #catan-board-svg { display: block; width: 100%; height: auto; }
-
-        /* ---- Bank / awards strip ---- */
-        .info-strip {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 10px;
-            background: var(--panel);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            padding: 12px 16px;
-        }
-        .info-block { flex: 1 1 auto; }
-        .info-block .label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-dim); margin-bottom: 6px; }
-        .bank-resources { display: flex; flex-wrap: wrap; gap: 8px; }
-        .bank-res {
-            display: flex; align-items: center; gap: 5px;
-            background: var(--panel-2); border: 1px solid var(--border);
-            border-radius: 8px; padding: 4px 9px; font-size: 0.85rem; font-weight: 600;
-        }
-        .awards { display: flex; flex-direction: column; gap: 6px; justify-content: center; }
-        .award-line { font-size: 0.82rem; }
-        .award-line .holder { font-weight: 700; }
-
-        /* ---- Player cards grid ---- */
-        .players-column {
-            display: grid;
-            grid-template-columns: 1fr;
-            grid-auto-rows: min-content;
-            gap: 12px;
-            flex: 1 1 300px;
-            min-width: 260px;
-            max-width: 340px;
-        }
-        .players-left { order: 1; }
-        .board-column { order: 2; }
-        .players-right { order: 3; }
-        .player-card {
-            background: var(--panel);
-            border: 1px solid var(--border);
-            border-left-width: 6px;
-            border-radius: 12px;
-            padding: 12px 14px;
-            display: none;
-        }
-        .player-card.current-player {
-            box-shadow: 0 0 0 2px gold, 0 4px 14px rgba(0,0,0,0.35);
-        }
-        .pc-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-        .pc-name { display: flex; align-items: center; gap: 8px; font-size: 1.05rem; font-weight: 700; }
-        .pc-swatch { width: 14px; height: 14px; border-radius: 4px; border: 1px solid rgba(0,0,0,0.35); }
-        .pc-turn-tag { font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.05em;
-                       background: gold; color: #3a2f00; padding: 2px 6px; border-radius: 6px; font-weight: 800; }
-        .vp-badge {
-            display: flex; flex-direction: column; align-items: center;
-            background: var(--panel-2); border: 1px solid var(--border);
-            border-radius: 10px; padding: 3px 12px; line-height: 1.05;
-        }
-        .vp-badge .vp-num { font-size: 1.35rem; font-weight: 800; }
-        .vp-badge .vp-lbl { font-size: 0.6rem; text-transform: uppercase; color: var(--text-dim); letter-spacing: 0.05em; }
-
-        .pc-section-label { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.05em;
-                            color: var(--text-dim); margin: 9px 0 4px; }
-        .pc-resources, .pc-devs { display: flex; flex-wrap: wrap; gap: 6px; }
-        .res-pill, .dev-pill {
-            display: flex; align-items: center; gap: 5px;
-            background: var(--panel-2); border: 1px solid var(--border);
-            border-radius: 7px; padding: 3px 8px; font-size: 0.82rem; font-weight: 600;
-        }
-        .res-pill .dot { width: 12px; height: 12px; border-radius: 3px; border: 1px solid rgba(0,0,0,0.3); }
-        .res-pill.zero, .dev-pill.zero { opacity: 0.4; }
-        .dev-pill .new-flag { color: #7CFC00; font-weight: 800; }
-
-        .pc-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 8px; }
-        .stat {
-            background: var(--panel-2); border: 1px solid var(--border);
-            border-radius: 8px; padding: 6px; text-align: center;
-        }
-        .stat .num { font-size: 1.05rem; font-weight: 700; }
-        .stat .sub { font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-dim); }
-
-        .pc-badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
-        .badge {
-            font-size: 0.68rem; font-weight: 700; padding: 3px 8px; border-radius: 999px;
-            border: 1px solid var(--border);
-        }
-        .badge.lr { background: #14532d; color: #bbf7d0; border-color: #22c55e; }
-        .badge.la { background: #7c2d12; color: #fed7aa; border-color: #f97316; }
-        .badge.port { background: var(--panel-2); color: var(--text); }
-        .badge.discard { background: #7f1d1d; color: #fecaca; border-color: #ef4444; }
-        .badge.win { background: #b8860b; color: #fff; border-color: #ffd700; }
-        .badge.muted { color: var(--text-dim); }
-
-        @media (max-width: 900px) {
-            /* When the side columns wrap, show the board first, then players */
-            .board-column { order: 1; }
-            .players-left { order: 2; }
-            .players-right { order: 3; }
-        }
-        @media (max-width: 640px) {
-            .players-column { max-width: 100%; }
-        }
-    </style>
+    <title>Catan Engine Inspector</title>
+    <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
-    <div class="catan-container">
-        <div class="status-bar">
-            <div class="status-title">Settlers of Catan</div>
-            <div class="status-chips" id="status-chips"></div>
-            <button id="refresh-button">Refresh</button>
+<div class="app">
+
+    <!-- ---------------------------------------------------------- Top bar -->
+    <header class="topbar">
+        <div class="brand">
+            <h1>Catan</h1>
+            <span class="sub">engine inspector</span>
         </div>
 
-        <div class="main-layout">
-            <div class="players-column players-left">
-                <div id="player-info-3" class="player-card"></div>
-                <div id="player-info-2" class="player-card"></div>
+        <div class="chips" id="status-chips"></div>
+
+        <div class="controls">
+            <span class="chip" id="runner-status">Connecting...</span>
+            <span class="sep"></span>
+            <button class="btn" id="btn-step" title="Advance one move (Right arrow)">Step</button>
+            <button class="btn" id="btn-step10" title="Advance ten moves (Shift + Right arrow)">+10</button>
+            <button class="btn primary" id="btn-play" title="Autoplay (Space)">Play</button>
+            <div class="speed">
+                <input type="range" id="speed-slider" min="0" max="2" step="0.05" value="0.5"
+                       title="Delay between moves while autoplaying">
+                <span class="val" id="speed-val">0.50s</span>
+            </div>
+            <span class="sep"></span>
+            <button class="btn danger" id="btn-restart" title="Deal a new board (Shift + R)">Restart</button>
+            <button class="btn icon" id="btn-help" title="Keyboard shortcuts (?)">?</button>
+        </div>
+    </header>
+
+    <!-- ---------------------------------------------------------- Layout -->
+    <div class="layout">
+
+        <!-- Left column -->
+        <div class="column">
+            <div class="player-card" id="player-0"></div>
+            <div class="player-card" id="player-1"></div>
+
+            <section class="panel" id="trade-panel" style="display:none">
+                <div class="panel-head"><span class="title">Trade on the table</span></div>
+                <div class="panel-body" id="trade-body"></div>
+            </section>
+        </div>
+
+        <!-- Centre column -->
+        <div class="column center">
+            <section class="panel">
+                <div class="toolbar">
+                    <span class="group-label">IDs</span>
+                    <div class="group">
+                        <button class="toggle" data-opt="ids.hexes">Hex <kbd>H</kbd></button>
+                        <button class="toggle" data-opt="ids.nodes">Node <kbd>N</kbd></button>
+                        <button class="toggle" data-opt="ids.edges">Edge <kbd>E</kbd></button>
+                        <button class="toggle" data-opt="ids.ports">Port <kbd>P</kbd></button>
+                    </div>
+                    <span class="sep"></span>
+                    <span class="group-label">Overlays</span>
+                    <div class="group">
+                        <button class="toggle" data-opt="sites" title="Show every empty build slot">Sites <kbd>G</kbd></button>
+                        <button class="toggle" data-opt="legal" title="Highlight the legal moves for whoever holds the prompt">Legal <kbd>L</kbd></button>
+                        <button class="toggle" data-opt="ownership" title="Tint hexes and roads by owner">Ownership <kbd>O</kbd></button>
+                        <button class="toggle" data-opt="inspect" title="Hover any hex, node or edge for its topology row">Inspect <kbd>I</kbd></button>
+                    </div>
+                    <span class="sep"></span>
+                    <span class="group-label">Panels</span>
+                    <div class="group">
+                        <button class="toggle" data-opt="log">Move log <kbd>M</kbd></button>
+                        <button class="toggle" data-opt="spoilers" title="Reveal what is left in the dev deck">Deck <kbd>K</kbd></button>
+                    </div>
+                </div>
+            </section>
+
+            <div class="board-wrap">
+                <svg id="board-svg" xmlns="http://www.w3.org/2000/svg"></svg>
+
+                <div class="board-legend" id="board-legend"></div>
+
+                <div class="board-hud">
+                    <button id="zoom-out" title="Zoom out">&minus;</button>
+                    <span class="zoom-val" id="zoom-val">100%</span>
+                    <button id="zoom-in" title="Zoom in">+</button>
+                    <button id="zoom-reset" title="Reset view (0 / double-click)">reset</button>
+                </div>
             </div>
 
-            <div class="board-column">
-                <div id="catan-board-svg-container">
-                    <svg id="catan-board-svg" xmlns="http://www.w3.org/2000/svg"></svg>
-                </div>
-                <div class="info-strip">
-                    <div class="info-block" style="flex: 2 1 260px;">
-                        <div class="label">Bank Supply</div>
-                        <div class="bank-resources" id="bank-resources"></div>
+            <section class="panel">
+                <div class="panel-body strip">
+                    <div>
+                        <div class="section-label">Bank supply</div>
+                        <div class="res-grid" id="bank-resources"></div>
                     </div>
-                    <div class="info-block" style="flex: 1 1 160px;">
-                        <div class="label">Awards & Decks</div>
-                        <div class="awards" id="awards"></div>
+                    <div>
+                        <div class="section-label">Awards</div>
+                        <div id="awards"></div>
                     </div>
                 </div>
-            </div>
+            </section>
+        </div>
 
-            <div class="players-column players-right">
-                <div id="player-info-0" class="player-card"></div>
-                <div id="player-info-1" class="player-card"></div>
-            </div>
+        <!-- Right column -->
+        <div class="column">
+            <div class="player-card" id="player-2"></div>
+            <div class="player-card" id="player-3"></div>
+
+            <section class="panel">
+                <div class="panel-head">
+                    <span class="title">Legal moves</span>
+                    <span class="title" id="legal-count">0</span>
+                </div>
+                <div class="panel-body">
+                    <div class="legal-list" id="legal-list"></div>
+                </div>
+            </section>
         </div>
     </div>
+</div>
 
-    <script>
-        // --- Constants for Board Rendering ---
-        const HEX_SIZE = 50;
-        const HEX_RADIUS = HEX_SIZE / Math.cos(Math.PI / 6);
-        const HEX_WIDTH = 2 * HEX_SIZE;
-        const HEX_HEIGHT = HEX_RADIUS * 2;
+<!-- ---------------------------------------------------------- Move log -->
+<div class="scrim" id="scrim"></div>
+<aside id="log-drawer">
+    <div class="drawer-head">
+        <h2>Move log <span class="title" id="log-count" style="color:var(--text-faint)"></span></h2>
+        <button class="btn icon" id="log-close" title="Close (M)">&times;</button>
+    </div>
+    <div class="log-filters">
+        <button class="toggle" data-filter="setup">Setup</button>
+        <button class="toggle" data-filter="roll">Rolls</button>
+        <button class="toggle" data-filter="build">Builds</button>
+        <button class="toggle" data-filter="dev">Dev</button>
+        <button class="toggle" data-filter="trade">Trades</button>
+        <button class="toggle" data-filter="robber">Robber</button>
+        <button class="toggle" data-filter="turn">Turns</button>
+    </div>
+    <div id="log-list"></div>
+</aside>
 
-        const SETTLEMENT_RADIUS = HEX_SIZE * 0.18;
-        const CITY_RADIUS = HEX_SIZE * 0.16;
-        const ROAD_WIDTH = HEX_SIZE * 0.12;
-        const ROBBER_RADIUS = HEX_SIZE * 0.28;
-        const NUMBER_FONT_SIZE = HEX_SIZE * 0.35;
-        const NUMBER_CIRCLE_RADIUS = HEX_SIZE * 0.28;
-        const PORT_RADIUS = HEX_SIZE * 0.28;
-        const PORT_FONT_SIZE  = HEX_SIZE * 0.25;
+<!-- ---------------------------------------------------------- Inspector -->
+<div id="inspector"></div>
 
-        const HEX_COLORS = {
-            'wood': '#006400', 'brick': '#B22222', 'sheep': '#90EE90',
-            'wheat': '#FFD700', 'ore': '#708090', 'desert': '#F0E68C',
-            'water': '#a7d7f9', 'generic': '#d1d5db'
-        };
-        const PLAYER_COLORS = {
-            'red': '#E53E3E', 'blue': '#3B82F6',
-            'orange': '#F59E0B', 'white': '#E5E7EB',
-            'default': '#A0AEC0'
-        };
-        const RESOURCE_NAMES_ORDERED = ['wood', 'brick', 'sheep', 'wheat', 'ore'];
-        const RESOURCE_ABBR = { wood: 'Wo', brick: 'Br', sheep: 'Sh', wheat: 'Wh', ore: 'Or' };
-        const DEV_LABELS = {
-            knight: 'Knight', year_of_plenty: 'Year of Plenty',
-            monopoly: 'Monopoly', road_building: 'Road Build', victory_point: 'Victory Pt'
-        };
-        const DEV_ABBR = {
-            knight: 'Knight', year_of_plenty: 'YoP',
-            monopoly: 'Mono', road_building: 'RoadB', victory_point: 'VP'
-        };
-        const DEV_ORDER = ['knight', 'year_of_plenty', 'monopoly', 'road_building', 'victory_point'];
+<!-- ---------------------------------------------------------- Shortcuts -->
+<div id="shortcuts">
+    <div class="sheet">
+        <h2>Keyboard shortcuts</h2>
+        <div class="keys">
+            <div class="krow"><span>Play / pause</span><kbd>Space</kbd></div>
+            <div class="krow"><span>Step one move</span><kbd>&rarr;</kbd></div>
+            <div class="krow"><span>Step ten moves</span><kbd>Shift + &rarr;</kbd></div>
+            <div class="krow"><span>Slower / faster</span><kbd>+</kbd> <kbd>&minus;</kbd></div>
+            <div class="krow"><span>Restart game</span><kbd>Shift + R</kbd></div>
+            <div class="krow"><span>Reset zoom</span><kbd>0</kbd></div>
+            <div class="krow"><span>Hex ids</span><kbd>H</kbd></div>
+            <div class="krow"><span>Node ids</span><kbd>N</kbd></div>
+            <div class="krow"><span>Edge ids</span><kbd>E</kbd></div>
+            <div class="krow"><span>Port ids</span><kbd>P</kbd></div>
+            <div class="krow"><span>Empty build sites</span><kbd>G</kbd></div>
+            <div class="krow"><span>Legal moves</span><kbd>L</kbd></div>
+            <div class="krow"><span>Ownership</span><kbd>O</kbd></div>
+            <div class="krow"><span>Hover inspector</span><kbd>I</kbd></div>
+            <div class="krow"><span>Move log</span><kbd>M</kbd></div>
+            <div class="krow"><span>Dev deck spoilers</span><kbd>K</kbd></div>
+            <div class="krow"><span>This sheet</span><kbd>?</kbd></div>
+            <div class="krow"><span>Close / dismiss</span><kbd>Esc</kbd></div>
+        </div>
+    </div>
+</div>
 
-        const svgNS = "http://www.w3.org/2000/svg";
-        const boardSvg = document.getElementById('catan-board-svg');
-
-        const hexGridCenters = (() => {
-            const centers = [];
-            let id = 0;
-            const gridRows = [
-                { count: 3, xOffsetRatio: 1.0 }, { count: 4, xOffsetRatio: 0.5 },
-                { count: 5, xOffsetRatio: 0.0 }, { count: 4, xOffsetRatio: 0.5 },
-                { count: 3, xOffsetRatio: 1.0 }
-            ];
-            let currentY = HEX_HEIGHT * 3/2;
-            gridRows.forEach(rowInfo => {
-                let currentX = rowInfo.xOffsetRatio * HEX_WIDTH;
-                for (let i = 0; i < rowInfo.count; i++) {
-                    centers.push({ id: id++, x: currentX, y: currentY });
-                    currentX += HEX_WIDTH;
-                }
-                currentY += HEX_RADIUS * 1.5;
-            });
-            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-            centers.forEach(c => {
-                minX = Math.min(minX, c.x - HEX_WIDTH / 2); maxX = Math.max(maxX, c.x + HEX_WIDTH / 2);
-                minY = Math.min(minY, c.y - HEX_HEIGHT / 2); maxY = Math.max(maxY, c.y + HEX_HEIGHT / 2);
-            });
-            const padding = HEX_SIZE * 0.5;
-            const viewWidth = (maxX - minX) + 2 * padding;
-            const viewHeight = (maxY - minY) + 2 * padding;
-            const adjustedCenters = centers.map(c => ({
-                id: c.id, x: c.x - minX + padding, y: c.y - minY + padding
-            }));
-            boardSvg.setAttribute('viewBox', `0 0 ${viewWidth.toFixed(2)} ${viewHeight.toFixed(2)}`);
-            return adjustedCenters;
-        })();
-
-        function getHexPoints(centerX, centerY, radius) {
-            const points = [];
-            for (let i = 0; i < 6; i++) {
-                const angle_rad = Math.PI / 3 * i + Math.PI / 6;
-                points.push(
-                    `${(centerX + radius * Math.cos(angle_rad)).toFixed(2)},${(centerY + radius * Math.sin(angle_rad)).toFixed(2)}`
-                );
-            }
-            return points.join(' ');
-        }
-
-        function getHexVertexCoords(hexCenterData, vertexIndex, radius) {
-            const angle_rad = Math.PI / 3 * vertexIndex + Math.PI / 6;
-            return {
-                x: hexCenterData.x + radius * Math.cos(angle_rad),
-                y: hexCenterData.y + radius * Math.sin(angle_rad)
-            };
-        }
-
-        function getHexEdgeCoords(hexCenterData, edgeIndex, radius) {
-            const v1 = getHexVertexCoords(hexCenterData, edgeIndex, radius);
-            const v2 = getHexVertexCoords(hexCenterData, (edgeIndex + 1) % 6, radius);
-            return { x1: v1.x, y1: v1.y, x2: v2.x, y2: v2.y };
-        }
-
-        // --- Drawing Functions ---
-        function drawHex(hexDataFull) {
-            const hexSpec = hexGridCenters.find(hc => hc.id === hexDataFull.id);
-            if (!hexSpec) return;
-            const { x: centerX, y: centerY } = hexSpec;
-            const group = document.createElementNS(svgNS, 'g');
-            const polygon = document.createElementNS(svgNS, 'polygon');
-            polygon.setAttribute('points', getHexPoints(centerX, centerY, HEX_RADIUS));
-            polygon.setAttribute('fill', HEX_COLORS[hexDataFull.resource] || 'gray');
-            polygon.setAttribute('stroke', '#4A5568');
-            polygon.setAttribute('stroke-width', '1.5');
-            group.appendChild(polygon);
-
-            if (hexDataFull.number) {
-                const numberBg = document.createElementNS(svgNS, 'circle');
-                numberBg.setAttribute('cx', centerX.toFixed(2));
-                numberBg.setAttribute('cy', centerY.toFixed(2));
-                numberBg.setAttribute('r', NUMBER_CIRCLE_RADIUS.toFixed(2));
-                numberBg.setAttribute('fill', 'rgba(255, 255, 255, 0.7)');
-                group.appendChild(numberBg);
-                const text = document.createElementNS(svgNS, 'text');
-                text.setAttribute('x', centerX.toFixed(2));
-                text.setAttribute('y', (centerY + NUMBER_FONT_SIZE * 0.35).toFixed(2));
-                text.setAttribute('text-anchor', 'middle');
-                text.setAttribute('font-family', 'Arial, Helvetica, sans-serif');
-                text.setAttribute('font-size', `${NUMBER_FONT_SIZE.toFixed(2)}px`);
-                text.setAttribute('font-weight', 'bold');
-                const isHighProb = hexDataFull.number === 6 || hexDataFull.number === 8;
-                text.setAttribute('fill', isHighProb ? '#C53030' : '#1A202C');
-                text.textContent = hexDataFull.number;
-                group.appendChild(text);
-            }
-            if (hexDataFull.hasRobber) {
-                const robberCircle = document.createElementNS(svgNS, 'circle');
-                robberCircle.setAttribute('cx', centerX.toFixed(2));
-                robberCircle.setAttribute('cy', centerY.toFixed(2));
-                robberCircle.setAttribute('r', ROBBER_RADIUS.toFixed(2));
-                robberCircle.setAttribute('fill', 'rgba(20,20,20,0.88)');
-                group.appendChild(robberCircle);
-            }
-            boardSvg.appendChild(group);
-        }
-
-        function drawSettlement(settlementData) {
-            const hexLoc = settlementData.location;
-            const hexCenterData = hexGridCenters.find(hc => hc.id === hexLoc.hexId);
-            if (!hexCenterData) return;
-            const vertexCoords = getHexVertexCoords(hexCenterData, hexLoc.vertex, HEX_RADIUS);
-            const playerColor = PLAYER_COLORS[settlementData.player] || PLAYER_COLORS['default'];
-            if (settlementData.type === 'city') {
-                const citySize = CITY_RADIUS * 2;
-                const city = document.createElementNS(svgNS, 'rect');
-                city.setAttribute('x', (vertexCoords.x - CITY_RADIUS).toFixed(2));
-                city.setAttribute('y', (vertexCoords.y - CITY_RADIUS).toFixed(2));
-                city.setAttribute('width', citySize.toFixed(2));
-                city.setAttribute('height', citySize.toFixed(2));
-                city.setAttribute('fill', playerColor);
-                city.setAttribute('stroke', '#1A202C');
-                city.setAttribute('stroke-width', '2');
-                boardSvg.appendChild(city);
-            } else {
-                const sRadius = SETTLEMENT_RADIUS;
-                const house = document.createElementNS(svgNS, 'polygon');
-                const points = [
-                    `${(vertexCoords.x - sRadius).toFixed(2)},${(vertexCoords.y + sRadius).toFixed(2)}`,
-                    `${(vertexCoords.x + sRadius).toFixed(2)},${(vertexCoords.y + sRadius).toFixed(2)}`,
-                    `${(vertexCoords.x + sRadius).toFixed(2)},${(vertexCoords.y - sRadius * 0.4).toFixed(2)}`,
-                    `${(vertexCoords.x).toFixed(2)},${(vertexCoords.y - sRadius * 1.6).toFixed(2)}`,
-                    `${(vertexCoords.x - sRadius).toFixed(2)},${(vertexCoords.y - sRadius * 0.4).toFixed(2)}`
-                ].join(' ');
-                house.setAttribute('points', points);
-                house.setAttribute('fill', playerColor);
-                house.setAttribute('stroke', '#1A202C');
-                house.setAttribute('stroke-width', '1.5');
-                boardSvg.appendChild(house);
-            }
-        }
-
-        function drawRoad(roadData) {
-            const hexLoc = roadData.location;
-            const hexCenterData = hexGridCenters.find(hc => hc.id === hexLoc.hexId);
-            if (!hexCenterData) return;
-            const edgeCoords = getHexEdgeCoords(hexCenterData, hexLoc.edge, HEX_RADIUS);
-            const playerColor = PLAYER_COLORS[roadData.player] || PLAYER_COLORS['default'];
-            const roadLine = document.createElementNS(svgNS, 'line');
-            roadLine.setAttribute('x1', edgeCoords.x1.toFixed(2));
-            roadLine.setAttribute('y1', edgeCoords.y1.toFixed(2));
-            roadLine.setAttribute('x2', edgeCoords.x2.toFixed(2));
-            roadLine.setAttribute('y2', edgeCoords.y2.toFixed(2));
-            roadLine.setAttribute('stroke', playerColor);
-            roadLine.setAttribute('stroke-width', ROAD_WIDTH.toFixed(2));
-            roadLine.setAttribute('stroke-linecap', 'round');
-            boardSvg.appendChild(roadLine);
-        }
-
-        function drawPort(portData) {
-            const hexC = hexGridCenters.find(h => h.id === portData.location.hexId);
-            if(!hexC) return;
-            const edge = getHexEdgeCoords(hexC, portData.location.edge, HEX_RADIUS);
-            const x = (edge.x1 + edge.x2) / 2;
-            const y = (edge.y1 + edge.y2) / 2;
-            const grp = document.createElementNS(svgNS,'g');
-            const c = document.createElementNS(svgNS,'circle');
-            c.setAttribute('cx', x.toFixed(2)); c.setAttribute('cy', y.toFixed(2));
-            c.setAttribute('r',  PORT_RADIUS.toFixed(2));
-            c.setAttribute('fill','rgba(255, 255, 255, 0.85)');
-            c.setAttribute('stroke','#1A202C'); c.setAttribute('stroke-width','1.5');
-            grp.appendChild(c);
-            const txt = document.createElementNS(svgNS,'text');
-            txt.setAttribute('x', x.toFixed(2)); txt.setAttribute('y', (y + PORT_FONT_SIZE*0.35).toFixed(2));
-            txt.setAttribute('text-anchor','middle'); txt.setAttribute('font-size',`${PORT_FONT_SIZE.toFixed(2)}px`);
-            txt.setAttribute('font-weight','bold'); txt.setAttribute('fill', '#2D3748');
-            txt.textContent = portData.ratio === 3 ? '3:1' : `2:${portData.type.slice(0,1).toUpperCase()}`;
-            grp.appendChild(txt);
-            boardSvg.appendChild(grp);
-        }
-
-        // --- Helpers ---
-        function cap(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : s; }
-
-        function el(tag, className, html) {
-            const e = document.createElement(tag);
-            if (className) e.className = className;
-            if (html !== undefined) e.innerHTML = html;
-            return e;
-        }
-
-        // --- Player card rendering ---
-        function renderPlayerInfo(p, container) {
-            container.innerHTML = '';
-            const color = PLAYER_COLORS[p.player_id] || PLAYER_COLORS['default'];
-            container.style.borderLeftColor = color;
-            p.is_current_player ? container.classList.add('current-player')
-                                : container.classList.remove('current-player');
-
-            // Header: name + turn tag + VP badge
-            const header = el('div', 'pc-header');
-            const nameWrap = el('div', 'pc-name');
-            nameWrap.innerHTML = `<span class="pc-swatch" style="background:${color}"></span>${cap(p.player_id)}`;
-            if (p.is_current_player) nameWrap.appendChild(el('span', 'pc-turn-tag', 'Turn'));
-            header.appendChild(nameWrap);
-
-            const vp = el('div', 'vp-badge');
-            vp.innerHTML = `<span class="vp-num">${p.victory_points}</span><span class="vp-lbl">VP</span>`;
-            header.appendChild(vp);
-            container.appendChild(header);
-
-            // Resources
-            container.appendChild(el('div', 'pc-section-label',
-                `Resources <span style="color:var(--text)">(${p.resource_total})</span>`));
-            const resWrap = el('div', 'pc-resources');
-            RESOURCE_NAMES_ORDERED.forEach(r => {
-                const count = (p.resources && p.resources[r]) || 0;
-                const pill = el('div', 'res-pill' + (count === 0 ? ' zero' : ''));
-                pill.innerHTML = `<span class="dot" style="background:${HEX_COLORS[r]}"></span>${RESOURCE_ABBR[r]} ${count}`;
-                resWrap.appendChild(pill);
-            });
-            container.appendChild(resWrap);
-
-            // Dev cards
-            container.appendChild(el('div', 'pc-section-label',
-                `Dev Cards <span style="color:var(--text)">(${p.dev_card_count})</span>`));
-            const devWrap = el('div', 'pc-devs');
-            DEV_ORDER.forEach(d => {
-                const held = (p.dev_cards && p.dev_cards[d]) || 0;
-                const fresh = (p.new_dev_cards && p.new_dev_cards[d]) || 0;
-                const total = held + fresh;
-                const pill = el('div', 'dev-pill' + (total === 0 ? ' zero' : ''));
-                pill.title = DEV_LABELS[d] + (fresh ? ` (${fresh} bought this turn)` : '');
-                pill.innerHTML = `${DEV_ABBR[d]} ${total}` + (fresh ? ` <span class="new-flag">+${fresh}</span>` : '');
-                devWrap.appendChild(pill);
-            });
-            container.appendChild(devWrap);
-
-            // Stat grid: settlements / cities / roads (remaining out of limit)
-            const stats = el('div', 'pc-stats');
-            stats.appendChild(el('div', 'stat',
-                `<div class="num">${p.settlements_built}/5</div><div class="sub">Settlements</div>`));
-            stats.appendChild(el('div', 'stat',
-                `<div class="num">${p.cities_built}/4</div><div class="sub">Cities</div>`));
-            stats.appendChild(el('div', 'stat',
-                `<div class="num">${p.roads_built}/15</div><div class="sub">Roads</div>`));
-            stats.appendChild(el('div', 'stat',
-                `<div class="num">${p.knights_played}</div><div class="sub">Knights</div>`));
-            stats.appendChild(el('div', 'stat',
-                `<div class="num">${p.longest_road_length}</div><div class="sub">Road Len</div>`));
-            stats.appendChild(el('div', 'stat',
-                `<div class="num">${p.settlements_remaining + p.cities_remaining + p.roads_remaining}</div><div class="sub">Pieces Left</div>`));
-            container.appendChild(stats);
-
-            // Badges: awards, ports, discards, winner
-            const badges = el('div', 'pc-badges');
-            if (p.is_winner) badges.appendChild(el('span', 'badge win', '👑 Winner'));
-            if (p.has_longest_road) badges.appendChild(el('span', 'badge lr', `Longest Road (${p.longest_road_length})`));
-            if (p.has_largest_army) badges.appendChild(el('span', 'badge la', `Largest Army (${p.knights_played})`));
-            if (p.discards_required > 0) badges.appendChild(el('span', 'badge discard', `Discard ${p.discards_required}`));
-            if (p.ports && p.ports.length) {
-                p.ports.forEach(port => {
-                    const lbl = port.ratio === 3 ? '3:1' : `2:1 ${cap(port.type)}`;
-                    badges.appendChild(el('span', 'badge port', `⚓ ${lbl}`));
-                });
-            } else {
-                badges.appendChild(el('span', 'badge port muted', 'No ports'));
-            }
-            container.appendChild(badges);
-
-            container.style.display = 'block';
-        }
-
-        // --- Status bar (phase / turn / dice / winner) ---
-        function renderStatusBar(info, roll) {
-            const chips = document.getElementById('status-chips');
-            chips.innerHTML = '';
-            if (!info) return;
-
-            if (info.winner) {
-                chips.appendChild(el('span', 'chip winner', `👑 ${cap(info.winner)} wins!`));
-            }
-            chips.appendChild(el('span', 'chip phase', `Phase: <b>${info.phase}</b>`));
-            chips.appendChild(el('span', 'chip', `Turn <b>${info.turn_index}</b>`));
-            if (info.current_player) {
-                chips.appendChild(el('span', 'chip', `Active: <b>${cap(info.current_player)}</b>`));
-            }
-            if (info.in_setup) chips.appendChild(el('span', 'chip', 'Setup'));
-
-            if (roll && roll.length === 2) {
-                chips.appendChild(el('span', 'chip dice', `🎲 ${roll[0]} + ${roll[1]} = ${roll[0] + roll[1]}`));
-            }
-        }
-
-        // --- Bank + awards strip ---
-        function renderInfoStrip(info) {
-            const bank = document.getElementById('bank-resources');
-            const awards = document.getElementById('awards');
-            bank.innerHTML = '';
-            awards.innerHTML = '';
-            if (!info) return;
-
-            RESOURCE_NAMES_ORDERED.forEach(r => {
-                const count = (info.bank && info.bank[r] !== undefined) ? info.bank[r] : '-';
-                const item = el('div', 'bank-res');
-                item.innerHTML = `<span class="res-pill dot" style="width:12px;height:12px;border-radius:3px;background:${HEX_COLORS[r]}"></span>${cap(r)}: ${count}`;
-                bank.appendChild(item);
-            });
-            const devItem = el('div', 'bank-res');
-            devItem.innerHTML = `🃏 Dev deck: ${info.dev_cards_remaining}`;
-            bank.appendChild(devItem);
-
-            const lr = info.longest_road_owner
-                ? `<span class="holder" style="color:${PLAYER_COLORS[info.longest_road_owner]}">${cap(info.longest_road_owner)}</span> (${info.longest_road_length})`
-                : '<span class="holder" style="color:var(--text-dim)">unclaimed</span>';
-            const la = info.largest_army_owner
-                ? `<span class="holder" style="color:${PLAYER_COLORS[info.largest_army_owner]}">${cap(info.largest_army_owner)}</span> (${info.largest_army_size})`
-                : '<span class="holder" style="color:var(--text-dim)">unclaimed</span>';
-            awards.appendChild(el('div', 'award-line', `🛣️ Longest Road: ${lr}`));
-            awards.appendChild(el('div', 'award-line', `⚔️ Largest Army: ${la}`));
-            awards.appendChild(el('div', 'award-line', `🏁 To win: ${info.vp_to_win} VP`));
-        }
-
-        // --- Main Rendering ---
-        function renderGameDisplay(fullGameState) {
-            while (boardSvg.firstChild) boardSvg.removeChild(boardSvg.firstChild);
-
-            if (!fullGameState || !fullGameState.hexes) {
-                console.error("Invalid game state.", fullGameState);
-                const errorText = document.createElementNS(svgNS, 'text');
-                errorText.setAttribute('x', '50%'); errorText.setAttribute('y', '50%');
-                errorText.setAttribute('text-anchor', 'middle'); errorText.setAttribute('fill', 'red');
-                errorText.setAttribute('font-size', `${HEX_SIZE * 0.4}px`);
-                errorText.textContent = "Error: Board data unavailable.";
-                boardSvg.appendChild(errorText);
-                document.querySelectorAll('.player-card').forEach(el => el.style.display = 'none');
-                renderStatusBar(null, null);
-                renderInfoStrip(null);
-                return;
-            }
-
-            fullGameState.hexes.forEach(hexData => drawHex(hexData));
-            (fullGameState.roads || []).forEach(drawRoad);
-            (fullGameState.settlements || []).forEach(drawSettlement);
-            (fullGameState.ports || []).forEach(drawPort);
-
-            const playerInfoElements = [
-                document.getElementById('player-info-0'), document.getElementById('player-info-1'),
-                document.getElementById('player-info-2'), document.getElementById('player-info-3')
-            ];
-            playerInfoElements.forEach(el => { if (el) el.style.display = 'none'; });
-
-            (fullGameState.players_data || []).forEach((player, index) => {
-                if (index < playerInfoElements.length && playerInfoElements[index]) {
-                    renderPlayerInfo(player, playerInfoElements[index]);
-                }
-            });
-
-            renderStatusBar(fullGameState.game_info, fullGameState.last_dice_roll);
-            renderInfoStrip(fullGameState.game_info);
-        }
-
-        // --- Live Update ---
-        async function fetchAndUpdateState() {
-            const button = document.getElementById('refresh-button');
-            button.disabled = true;
-            button.textContent = 'Refreshing...';
-            try {
-                const response = await fetch('/state');
-                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-                const newGameState = await response.json();
-                renderGameDisplay(newGameState);
-            } catch (error) {
-                console.error('Error fetching or parsing game state:', error);
-                renderGameDisplay(null);
-            } finally {
-                button.disabled = false;
-                button.textContent = 'Refresh';
-            }
-        }
-
-        document.addEventListener('DOMContentLoaded', () => {
-            fetchAndUpdateState();
-            const refreshButton = document.getElementById('refresh-button');
-            if (refreshButton) refreshButton.addEventListener('click', fetchAndUpdateState);
-            setInterval(fetchAndUpdateState, 500);
-        });
-    </script>
+<script src="/static/board.js"></script>
+<script src="/static/panels.js"></script>
+<script src="/static/main.js"></script>
 </body>
 </html>

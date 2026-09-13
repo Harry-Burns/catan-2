@@ -14,6 +14,7 @@ class Engine:
         if game_state is None:
             game_state = initialize_game(rng)
 
+        self.seed = int(seed)
         self.rng = rng
         self.gs = game_state
 

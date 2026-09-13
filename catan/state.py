@@ -62,6 +62,10 @@ class GameState:
     prompt: int
     action_log: list[int]
 
+    # Last (die1, die2) actually rolled. Display-only: nothing in the rules
+    # reads it, but without it the UI can never show what was rolled.
+    last_dice_roll: Optional[tuple[int, int]] = None
+
     def clone_shallow(self) -> "GameState":
         return GameState(
             topology=self.topology,  # immutable, safe to share
@@ -104,5 +108,6 @@ class GameState:
             turn_index=self.turn_index,
             prompt=self.prompt,
             action_log=list(self.action_log),
+            last_dice_roll=self.last_dice_roll,
         )
     
