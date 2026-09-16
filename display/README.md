@@ -70,11 +70,27 @@ Commands: `step` (with `value` = how many), `play`, `pause`, `toggle`,
 | Ownership  | `O` | hex rings and road glow coloured by owner                     |
 | Inspect    | `I` | hover any hex/node/edge for its raw topology row              |
 | Move log   | `M` | the history drawer                                            |
+| Moves      | `A` | every playable move in this state, decoded and grouped        |
 | Deck       | `K` | what is left in the dev deck (a spoiler, so it is off by default) |
 
-Controls: `Space` play/pause, `→` step, `Shift+→` step ten, `+`/`-` speed,
-`Shift+R` restart, `0` reset zoom, `?` the full list. Scroll to zoom, drag to
-pan, double-click to reset. Toggle states persist in `localStorage`.
+`Sites` is independent of `Legal`: the legal overlay draws on its own layer, so
+turning it on no longer forces the ghost markers on with it.
+
+The `Moves` toggle swaps the "Legal moves" panel from per-action counts to the
+moves themselves (`robber to H7, rob BLUE`, `2 ore -> 1 brick (2:1)`), grouped
+by action. Hover a row for its packed action int, which is what you paste into a
+test. Long prompts are capped at 400 listed moves; the count in the panel header
+is always the true total.
+
+Controls: `Space` play/pause, `→` step, `Shift+→` step ten, `+`/`-` faster /
+slower, `Shift+R` restart, `0` reset zoom, `?` the full list. Scroll to zoom,
+drag to pan, double-click to reset. Toggle states persist in `localStorage`.
+
+The speed control is a **rate**, in moves per second, on a log scale from 0.5/s
+up to 50/s with the top position meaning "no delay at all". The runner's own
+protocol is still a delay in seconds per move -- the page converts. While
+autoplaying, the readout also shows the rate actually achieved
+(`7.1/s · 6.6 act`), which is the number to watch when profiling.
 
 The terminal keys still work at the same time (`p`, `→`, `f`, `q`, and so on).
 

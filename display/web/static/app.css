@@ -370,6 +370,22 @@ body {
 .legal-row .name { font-family: var(--mono); font-size: 0.68rem; color: var(--text-dim); }
 .legal-row .n { font-weight: 700; font-family: var(--mono); }
 .legal-empty { color: var(--text-faint); font-size: 0.73rem; font-style: italic; }
+.legal-group { margin-bottom: 6px; }
+.legal-group-head {
+    display: flex; justify-content: space-between; align-items: baseline;
+    padding: 2px 0 3px; border-bottom: 1px solid var(--line);
+    margin-bottom: 3px;
+}
+.legal-group-head .name {
+    font-family: var(--mono); font-size: 0.66rem; letter-spacing: 0.02em;
+    color: var(--text-dim);
+}
+.legal-group-head .n { font-weight: 700; font-family: var(--mono); font-size: 0.68rem; }
+.legal-move {
+    font-size: 0.72rem; color: var(--text); padding: 1px 0 1px 8px;
+    border-left: 2px solid var(--line); margin-left: 2px;
+}
+.legal-move:hover { border-left-color: var(--accent, #37d399); color: #fff; }
 
 /* ------------------------------------------------------------------ *
  *  Trade panel

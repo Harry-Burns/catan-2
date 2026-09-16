@@ -18,7 +18,7 @@
     const DEFAULT_OPTS = {
         ids: { hexes: false, nodes: false, edges: false, ports: false },
         sites: false, legal: true, ownership: false, inspect: true,
-        spoilers: false, log: false,
+        spoilers: false, log: false, movelist: false,
     };
 
     let opts = loadOpts();
@@ -26,7 +26,63 @@
     let lastVersion = -1;
     let runner = { connected: false, playing: false, delay: 0.5, steps: 0, finished: false };
     let runnerStale = true;
+
+    // The runner's protocol is a DELAY (seconds per move); this control is a
+    // SPEED (moves per second), which is what you actually think in. Position
+    // maps to rate on a log scale so the slow end stays usable, and the top
+    // position means "no delay at all".
+    const RATE_MIN = 0.5, RATE_MAX = 50, POS_MAX = 100;
+    // How long the control keeps showing the user's own number after they touch
+    // it, so a poll still carrying the old delay can't yank it back mid-drag.
+    const SPEED_SETTLE_MS = 700;
+    let speedHeldUntil = 0;
+    let speedSendTimer = null;
+    let rateSamples = [];
     const logFilters = new Set(['setup', 'roll', 'build', 'dev', 'trade', 'robber', 'turn']);
+
+    // --- Speed control ------------------------------------------------- //
+    function posToDelay(pos) {
+        const p = Number(pos);
+        if (p >= POS_MAX) return 0;                       // uncapped
+        const rate = RATE_MIN * Math.pow(RATE_MAX / RATE_MIN, p / (POS_MAX - 1));
+        return Math.round((1 / rate) * 1000) / 1000;
+    }
+
+    function delayToPos(delay) {
+        const d = Number(delay);
+        if (!(d > 0)) return POS_MAX;
+        const rate = Math.min(RATE_MAX, Math.max(RATE_MIN, 1 / d));
+        return Math.round((POS_MAX - 1) * Math.log(rate / RATE_MIN) / Math.log(RATE_MAX / RATE_MIN));
+    }
+
+    function speedLabel(delay) {
+        const d = Number(delay);
+        if (!(d > 0)) return 'max';
+        const rate = 1 / d;
+        return rate >= 10 ? rate.toFixed(0) + '/s' : rate.toFixed(1) + '/s';
+    }
+
+    // Moves actually completed per second, measured over a short window. The
+    // target rate is what you asked for; this is what the runner managed.
+    function observedRate(steps) {
+        const now = performance.now();
+        const last = rateSamples[rateSamples.length - 1];
+        if (!last || last[1] !== steps) rateSamples.push([now, steps]);
+        while (rateSamples.length > 2 && now - rateSamples[0][0] > 3000) rateSamples.shift();
+        if (rateSamples.length < 2) return null;
+        const first = rateSamples[0];
+        const dt = (now - first[0]) / 1000, ds = steps - first[1];
+        return (dt >= 0.4 && ds > 0) ? ds / dt : null;
+    }
+
+    function setSpeedFromPos(pos) {
+        const slider = document.getElementById('speed-slider');
+        const clamped = Math.max(0, Math.min(POS_MAX, pos));
+        slider.value = String(clamped);
+        speedHeldUntil = performance.now() + SPEED_SETTLE_MS;
+        document.getElementById('speed-val').textContent = speedLabel(posToDelay(clamped));
+        sendCommand('speed', posToDelay(clamped));
+    }
 
     // --- Options persistence --------------------------------------------- //
     function loadOpts() {
@@ -95,7 +151,7 @@
         Panels.renderStatus(state);
         Panels.renderPlayers(state);
         Panels.renderBank(state, opts.spoilers);
-        Panels.renderLegal(state);
+        Panels.renderLegal(state, opts.movelist);
         Panels.renderTrade(state);
         Panels.renderLog(state, logFilters);
         paintLegend();
@@ -181,9 +237,20 @@
                 ? `Controllers: ${runner.players.join(', ')}` : '';
         }
 
+        // Keep the measured rate ticking even while the user is dragging.
+        const actual = observedRate(runner.steps);
+
+        // Don't fight the user: while they are dragging -- or until the runner
+        // has had time to acknowledge the value they picked -- the control keeps
+        // showing their number, not the one this poll happened to carry.
         const slider = document.getElementById('speed-slider');
-        if (document.activeElement !== slider) slider.value = String(runner.delay);
-        document.getElementById('speed-val').textContent = `${Number(runner.delay).toFixed(2)}s`;
+        if (performance.now() < speedHeldUntil || document.activeElement === slider) return;
+
+        slider.value = String(delayToPos(runner.delay));
+        const target = speedLabel(runner.delay);
+        document.getElementById('speed-val').textContent =
+            (runner.playing && actual !== null) ? target + ' \u00b7 ' + actual.toFixed(1) + ' act'
+                                                : target;
     }
 
     // --- Toggles ------------------------------------------------------------------ //
@@ -202,6 +269,7 @@
         paintToggles();
         if (path === 'log') { paintDrawer(); return; }
         if (path === 'spoilers') { if (state) Panels.renderBank(state, opts.spoilers); return; }
+        if (path === 'movelist') { if (state) Panels.renderLegal(state, opts.movelist); return; }
         if (path === 'inspect') { hideInspector(); }
         rerenderBoardOnly();
     }
@@ -236,9 +304,21 @@
 
         const slider = document.getElementById('speed-slider');
         slider.oninput = () => {
-            document.getElementById('speed-val').textContent = `${Number(slider.value).toFixed(2)}s`;
+            speedHeldUntil = performance.now() + SPEED_SETTLE_MS;
+            document.getElementById('speed-val').textContent = speedLabel(posToDelay(slider.value));
+            // Send while dragging, throttled, so the game reacts under the cursor
+            // instead of only when the handle is released.
+            if (speedSendTimer) return;
+            speedSendTimer = setTimeout(() => {
+                speedSendTimer = null;
+                sendCommand('speed', posToDelay(slider.value));
+            }, 90);
         };
-        slider.onchange = () => sendCommand('speed', Number(slider.value));
+        slider.onchange = () => {
+            speedHeldUntil = performance.now() + SPEED_SETTLE_MS;
+            sendCommand('speed', posToDelay(slider.value));
+            slider.blur();      // a focused slider would swallow every shortcut
+        };
 
         document.querySelectorAll('[data-opt]').forEach(btn => {
             btn.onclick = () => toggleOpt(btn.dataset.opt);
@@ -271,11 +351,16 @@
     const KEY_TO_OPT = {
         h: 'ids.hexes', n: 'ids.nodes', e: 'ids.edges', p: 'ids.ports',
         g: 'sites', l: 'legal', o: 'ownership', i: 'inspect', m: 'log', k: 'spoilers',
+        a: 'movelist',
     };
 
     function onKey(evt) {
         const tag = (evt.target.tagName || '').toLowerCase();
-        if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+        // Only real text entry should swallow the shortcuts. A focused range
+        // slider used to kill every key on the page until you clicked away.
+        const typing = tag === 'textarea' || tag === 'select'
+            || (tag === 'input' && (evt.target.type || '').toLowerCase() !== 'range');
+        if (typing) return;
         if (evt.ctrlKey || evt.metaKey || evt.altKey) return;
 
         if (evt.key === 'Escape') {
@@ -305,10 +390,12 @@
                 sendCommand('step', evt.shiftKey ? 10 : 1);
                 break;
             case '+': case '=':
-                sendCommand('speed', Math.min(2, Number(runner.delay) + 0.1));
+                evt.preventDefault();
+                setSpeedFromPos(delayToPos(runner.delay) + 5);   // + is faster now
                 break;
             case '-': case '_':
-                sendCommand('speed', Math.max(0, Number(runner.delay) - 0.1));
+                evt.preventDefault();
+                setSpeedFromPos(delayToPos(runner.delay) - 5);
                 break;
             case '0':
                 Board.resetCamera();

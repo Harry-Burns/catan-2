@@ -315,4 +315,10 @@ class LegalityAuditor:
         mask = snap.trade_accept_mask or []
         legal = {p for p, accepted in enumerate(mask)
                  if accepted and p != snap.current_player_idx}
-        self._compare(label, offered, legal, lambda p: f"player {p}")
+        # Rulebook p.4: nobody is bound by an offer, so declining every acceptor
+        # stays legal however many of them there are.
+        legal.add(NONE_PLAYER)
+        self._compare(
+            label, offered, legal,
+            lambda p: "nobody (close the offer)" if p == NONE_PLAYER
+            else f"player {p}")

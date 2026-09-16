@@ -24,7 +24,10 @@ from catan.ids import NONE_PLAYER                                 # noqa: E402
 MAX_STEPS = 10_000
 
 EXPECTED = {
-    "picker": "dbced5e5d52812da",
+    # Re-recorded when the proposer gained the option to close a trade offer
+    # without trading (catan/interface.py, trade_selection): the picker walks
+    # every legal move, so one extra move reshuffles its whole stream.
+    "picker": "11e3d5f63f2d930f",
     "jsettlers": "504815773ed9e054",
     "seeded_random": "cb03b539c96e94a6",
 }

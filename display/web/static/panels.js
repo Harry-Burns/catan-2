@@ -255,7 +255,7 @@ const Panels = (() => {
     }
 
     // --- Legal moves ----------------------------------------------------- //
-    function renderLegal(state) {
+    function renderLegal(state, showList) {
         const box = document.getElementById('legal-list');
         const head = document.getElementById('legal-count');
         const legal = state.legal || {};
@@ -271,12 +271,50 @@ const Panels = (() => {
             box.appendChild(h('div', 'legal-empty', 'No legal moves'));
             return;
         }
+        if (showList) { renderLegalList(box, legal); return; }
+
         entries.sort((a, b) => b[1] - a[1]);
         entries.forEach(([name, n]) => {
             const row = h('div', 'legal-row');
             row.innerHTML = `<span class="name">${esc(name)}</span><span class="n">${n}</span>`;
             box.appendChild(row);
         });
+    }
+
+    // Every playable move, grouped under its action so a 60-move turn still
+    // reads as a handful of groups rather than one long wall.
+    function renderLegalList(box, legal) {
+        const moves = legal.moves || [];
+        if (!moves.length) {
+            box.appendChild(h('div', 'legal-empty', 'No move detail available'));
+            return;
+        }
+        const groups = new Map();
+        moves.forEach(m => {
+            if (!groups.has(m.action)) groups.set(m.action, []);
+            groups.get(m.action).push(m);
+        });
+
+        [...groups.entries()]
+            .sort((a, b) => b[1].length - a[1].length)
+            .forEach(([name, items]) => {
+                const grp = h('div', 'legal-group');
+                const head = h('div', 'legal-group-head');
+                head.innerHTML = `<span class="name">${esc(name)}</span><span class="n">${items.length}</span>`;
+                grp.appendChild(head);
+                items.forEach(m => {
+                    const row = h('div', 'legal-move', m.text);
+                    // The packed int is the thing you paste into a test.
+                    row.title = `0x${(m.raw >>> 0).toString(16)}  (${m.raw})`;
+                    grp.appendChild(row);
+                });
+                box.appendChild(grp);
+            });
+
+        if (legal.moves_truncated) {
+            box.appendChild(h('div', 'legal-empty',
+                `+${legal.moves_truncated} more not listed`));
+        }
     }
 
     // --- Trade on the table ----------------------------------------------- //

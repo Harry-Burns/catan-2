@@ -25,9 +25,9 @@
             <button class="btn" id="btn-step10" title="Advance ten moves (Shift + Right arrow)">+10</button>
             <button class="btn primary" id="btn-play" title="Autoplay (Space)">Play</button>
             <div class="speed">
-                <input type="range" id="speed-slider" min="0" max="2" step="0.05" value="0.5"
-                       title="Delay between moves while autoplaying">
-                <span class="val" id="speed-val">0.50s</span>
+                <input type="range" id="speed-slider" min="0" max="100" step="1" value="50"
+                       title="Autoplay speed in moves per second (right = faster)">
+                <span class="val" id="speed-val">2.0/s</span>
             </div>
             <span class="sep"></span>
             <button class="btn danger" id="btn-restart" title="Deal a new board (Shift + R)">Restart</button>
@@ -72,6 +72,7 @@
                     <span class="group-label">Panels</span>
                     <div class="group">
                         <button class="toggle" data-opt="log">Move log <kbd>M</kbd></button>
+                        <button class="toggle" data-opt="movelist" title="List every playable move in this state, not just the counts">Moves <kbd>A</kbd></button>
                         <button class="toggle" data-opt="spoilers" title="Reveal what is left in the dev deck">Deck <kbd>K</kbd></button>
                     </div>
                 </div>
@@ -152,7 +153,7 @@
             <div class="krow"><span>Play / pause</span><kbd>Space</kbd></div>
             <div class="krow"><span>Step one move</span><kbd>&rarr;</kbd></div>
             <div class="krow"><span>Step ten moves</span><kbd>Shift + &rarr;</kbd></div>
-            <div class="krow"><span>Slower / faster</span><kbd>+</kbd> <kbd>&minus;</kbd></div>
+            <div class="krow"><span>Faster / slower</span><kbd>+</kbd> <kbd>&minus;</kbd></div>
             <div class="krow"><span>Restart game</span><kbd>Shift + R</kbd></div>
             <div class="krow"><span>Reset zoom</span><kbd>0</kbd></div>
             <div class="krow"><span>Hex ids</span><kbd>H</kbd></div>
@@ -164,6 +165,7 @@
             <div class="krow"><span>Ownership</span><kbd>O</kbd></div>
             <div class="krow"><span>Hover inspector</span><kbd>I</kbd></div>
             <div class="krow"><span>Move log</span><kbd>M</kbd></div>
+            <div class="krow"><span>List playable moves</span><kbd>A</kbd></div>
             <div class="krow"><span>Dev deck spoilers</span><kbd>K</kbd></div>
             <div class="krow"><span>This sheet</span><kbd>?</kbd></div>
             <div class="krow"><span>Close / dismiss</span><kbd>Esc</kbd></div>

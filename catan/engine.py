@@ -104,7 +104,10 @@ def apply_action_inplace(gs: GameState, a: int, rng: np.random.Generator) -> Non
         gs.current_player_idx = (gs.current_player_idx + 1) % N_PLAYERS
         gs.prompt = DECIDE_TRADE
     elif action == TABLE_TRADE_SELECT:
-        if arg1 != -1:
+        # arg1 >= N_PLAYERS (NONE_PLAYER) closes the offer without trading. The
+        # sentinel has to be an in-range id: arg1 is masked to 12 bits when
+        # packed, so a -1 comes back as 4095 and never compares equal to -1.
+        if arg1 < N_PLAYERS:
             pid1, pid2 = gs.current_player_idx, arg1
             give, take = gs.trade_offer_give, gs.trade_offer_take
 

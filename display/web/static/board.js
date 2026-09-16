@@ -485,7 +485,11 @@ const Board = (() => {
         }
 
         // ---- edges ----------------------------------------------------- //
-        const showSites = opts.sites || opts.ids.edges || opts.legal;
+        // Ghost markers on unbuilt slots. `opts.legal` used to force these on,
+        // which made the Sites toggle do nothing whenever the Legal overlay was
+        // up -- and Legal is on by default, so Sites looked permanently broken.
+        // Legal highlights draw on their own layer and never needed the ghosts.
+        const showSites = opts.sites || opts.ids.edges;
         (state.edges || []).forEach(edge => {
             const geom = edgeGeom.get(edge.id);
             if (!geom) return;

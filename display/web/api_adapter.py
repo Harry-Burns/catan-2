@@ -33,8 +33,12 @@ from catan.state import GameState
 from catan.interface import get_victory_points
 from catan.actions import (
     PROMPT2STR, RESPONSE2STR, unpack_action,
-    SETUP_RESPONSE, BUILD_ROAD, BUILD_SETTLEMENT, BUILD_CITY,
-    PLAY_ROAD_BUILDER, SELECT_ROBBER_RESPONSE,
+    unpack_port_trade, unpack_table_trade,
+    SETUP_RESPONSE, ROLL, PASS, BUILD_ROAD, BUILD_SETTLEMENT, BUILD_CITY,
+    PURCHASE_DEV_CARD, PLAY_KNIGHT, PLAY_MONOPOLY, PLAY_YEAR_OF_PLENTY,
+    PLAY_ROAD_BUILDER, PORT_TRADE, TABLE_TRADE_PROPOSE, TABLE_TRADE_SELECT,
+    TABLE_TRADE_ACCEPT, TABLE_TRADE_REJECT, DISCARD_RESOURCE,
+    SELECT_ROBBER_RESPONSE,
 )
 
 from pydantic import BaseModel
@@ -188,6 +192,13 @@ class PlayerDisplayData(BaseModel):
 #  Global game info / legality / trade                                         #
 # --------------------------------------------------------------------------- #
 
+class MoveOption(BaseModel):
+    """One playable move, decoded far enough to read at a glance."""
+    action: str                      # RESPONSE2STR name, e.g. "BUILD_ROAD"
+    text: str                        # "settlement on N12"
+    raw: int                         # the packed action int, for copy/paste
+
+
 class LegalMoves(BaseModel):
     """What the player holding the prompt may legally do, by board target."""
     settlement_nodes: List[int] = []
@@ -198,6 +209,10 @@ class LegalMoves(BaseModel):
     setup_edges: List[int] = []
     # Action name -> how many distinct moves of that kind are available.
     action_counts: Dict[str, int] = {}
+    # Every playable move, decoded. Capped: road-builder and setup prompts can
+    # run to thousands of pairs and the page only has to stay readable.
+    moves: List[MoveOption] = []
+    moves_truncated: int = 0
     total: int = 0
     error: Optional[str] = None
 
@@ -292,6 +307,61 @@ def _pips(number: Optional[int]) -> int:
     return 6 - abs(7 - int(number))
 
 
+# How many decoded moves to ship to the page. Setup and road-builder prompts
+# enumerate pairs, so the list can run to thousands; the counts above still
+# report the true total.
+MAX_LISTED_MOVES = 400
+
+
+def _describe_move(gs: GameState, a: int) -> str:
+    """One readable line for a move that has *not* been played yet.
+
+    movelog.py phrases moves from the state change they caused; this has only
+    the packed action, so the two can't share code.
+    """
+    action, arg1, arg2 = unpack_action(a)
+
+    if action == SETUP_RESPONSE:      return f"settle N{arg1}, road E{arg2}"
+    if action == ROLL:                return "roll the dice"
+    if action == PASS:                return "end turn"
+    if action == BUILD_ROAD:          return f"road on E{arg1}"
+    if action == BUILD_SETTLEMENT:    return f"settlement on N{arg1}"
+    if action == BUILD_CITY:          return f"city on N{arg1}"
+    if action == PURCHASE_DEV_CARD:   return "buy a development card"
+    if action == PLAY_KNIGHT:         return "play knight"
+    if action == PLAY_MONOPOLY:       return f"monopoly on {RES2STR[arg1]}"
+    if action == PLAY_YEAR_OF_PLENTY: return f"year of plenty: {RES2STR[arg1]} + {RES2STR[arg2]}"
+    if action == PLAY_ROAD_BUILDER:   return f"road building: E{arg1}, E{arg2}"
+    if action == DISCARD_RESOURCE:    return f"discard 1 {RES2STR[arg1]}"
+    if action == TABLE_TRADE_ACCEPT:  return "accept the offer"
+    if action == TABLE_TRADE_REJECT:  return "reject the offer"
+
+    if action == PORT_TRADE:
+        give, rate, take = unpack_port_trade(a)
+        return f"{rate} {RES2STR[give]} -> 1 {RES2STR[take]} ({rate}:1)"
+
+    if action == TABLE_TRADE_PROPOSE:
+        give, take = unpack_table_trade(a)
+        return f"offer {_bag_phrase(give)} for {_bag_phrase(take)}"
+
+    if action == TABLE_TRADE_SELECT:
+        if arg1 >= N_PLAYERS:
+            return "close the offer, trade with nobody"
+        return f"trade with {PLY2STR[arg1].upper()}"
+
+    if action == SELECT_ROBBER_RESPONSE:
+        if arg2 == NONE_PLAYER or arg2 >= N_PLAYERS:
+            return f"robber to H{arg1}, rob nobody"
+        return f"robber to H{arg1}, rob {PLY2STR[arg2].upper()}"
+
+    return f"arg1={arg1} arg2={arg2}"
+
+
+def _bag_phrase(counts) -> str:
+    parts = [f"{n} {RES2STR[i]}" for i, n in enumerate(counts) if n]
+    return " + ".join(parts) if parts else "nothing"
+
+
 def _legal_targets(gs: GameState) -> LegalMoves:
     """Decode `playable_moves` into board targets the UI can highlight."""
     from catan.engine import playable_moves  # local: avoids an import cycle
@@ -335,6 +405,16 @@ def _legal_targets(gs: GameState) -> LegalMoves:
     legal.setup_edges = sorted(setup_edges)
     legal.action_counts = dict(sorted(counts.items()))
     legal.total = len(moves)
+    legal.moves = [
+        MoveOption(
+            action=RESPONSE2STR[unpack_action(a)[0]] if unpack_action(a)[0] < len(RESPONSE2STR)
+            else str(unpack_action(a)[0]),
+            text=_describe_move(gs, a),
+            raw=int(a),
+        )
+        for a in moves[:MAX_LISTED_MOVES]
+    ]
+    legal.moves_truncated = max(0, len(moves) - MAX_LISTED_MOVES)
     return legal
 
 

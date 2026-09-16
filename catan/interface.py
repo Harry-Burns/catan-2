@@ -587,6 +587,10 @@ def trade_selection(gs: GameState) -> list[int]:
             continue
         if accepted:
             actions.append(TABLE_TRADE_SELECT_TABLE[pid])
+    # Rulebook p.4: an offer is an invitation, not a commitment -- the proposer
+    # may always close it without trading. NONE_PLAYER is the "nobody" slot the
+    # table is already sized for.
+    actions.append(TABLE_TRADE_SELECT_TABLE[NONE_PLAYER])
     return actions
 
 def trade_decision(gs: GameState) -> list[int]:
